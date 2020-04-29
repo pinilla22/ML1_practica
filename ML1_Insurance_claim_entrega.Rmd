@@ -144,6 +144,7 @@ library(ROCR)
 
 library(rpart)
 library(rpart.plot)
+library(e1071)
 
 ```
 
@@ -164,7 +165,7 @@ dim(insurance)
 Al ver que la longitud de la muestra es de 10302 vamos a repartir un 68% en train al cual denominaremos "train", 20 en test que denominaremos "test" y un 12 para validation.
 
 ```{r}
-set.seed(101)
+set.seed(342)
 sample <- sample.int(n = nrow(insurance), size = floor(.80*nrow(insurance)), replace = F)
 train_temp <- insurance[sample, ]
 test  <- insurance[-sample, ]
@@ -724,6 +725,7 @@ Primero vamos a buscar el punto optimo de cluster en funcion del minimo error.
 # Initialize total within sum of squares error: wss
 wss <- 0
 wsr <- 0
+set.seed(342)
 # For 1 to 15 cluster centers
 for (i in 1:10) {
   km.out <- kmeans(xiris, centers = i, nstart = 20)
@@ -746,34 +748,69 @@ Estas caracteristicas de kmeans nos da una idea de la calidad de nuestro modelo.
 
 ```{r echo=FALSE}
 print("Los registros para cada cluster son los siguientes:")
-km$size
+km.out$size
 print("La suma de cuadrados total es")
-km$totss
+km.out$totss
 print("La suma de cuadrados entre grupos es")
-km$betweenss
+km.out$betweenss
 print("La suma de cuadrados dentro del grupos es")
-km$withinss
+km.out$withinss
 print("La suma de cuadrados agrupada de las medidas dentro del grupos es")
-km$tot.withinss
+km.out$tot.withinss
 print("La Varianza explicada con cinco clusters es")
-(km$betweenss/km$totss) * 100
+(km.out$betweenss/km.out$totss) * 100
 ```
 
 
 Posteriormente al elegir el numero de centroides vamos a ejecutar el modelo y ver las medias de cada variable en cada Cluster y de este modo poder ver si hay diferencias en la siniestralidad (Variable CLAIM FLAG)
 
 ```{r echo=FALSE}
-set.seed(123)
+set.seed(342)
 km <- kmeans(xiris, 5, nstart = 1)
 km
 aggregate(train_kmeans, by=list(km$cluster), mean)
+
+
+plot(train_kmeans$AGE, train_kmeans$CLAIM_FLAG, col=km$cluster, xlab="age", ylab="claim_flag")
+table(km$cluster, train_kmeans$CLAIM_FLAG)
 ```
+
+
+
+
 
 Lo que podemos ver que en los diferentes cluster es que tenemos 3 medias diferenciadas en los 5 cluster de la variable CLAIM_FLAG.
 
 Podriamos decir que tenemos un cluster sin siniestralidad, otros dos con una siniestralidad de un 26% y otros dos con una siniestralidad del 50%.
 
 Si nos fijamos en el numero de registros por cluster un 60% esta en la tarifa del 26% mientras que el otro 40% estaría repartido en 20% buenos y 20% malos conductores.
+
+
+```{r}
+set.seed(342)
+
+xiris.test <- scale(test_kmeans)
+km.test <- kmeans(xiris.test, 5, nstart = 1)
+#km.test
+#aggregate(train_kmeans$CLAIM_FLAG, by=list(km$cluster), FUN = mean)
+#aggregate(test_kmeans$CLAIM_FLAG, by=list(km.test$cluster), mean)
+
+#prop.table(table(km$cluster, train_kmeans$CLAIM_FLAG)) %>% round(digits = 2)
+#prop.table(table(km.test$cluster, test_kmeans$CLAIM_FLAG)) %>% round(digits = 2)
+
+table_train <- prop.table(table(km$cluster, train_kmeans$CLAIM_FLAG)) %>% round(digits=2)
+colnames(table_train) <- c("0.train", "1.train")
+table_train
+
+table_test <- prop.table(table(km.test$cluster, test_kmeans$CLAIM_FLAG)) %>% round(digits=2)
+colnames(table_test) <- c("0.test", "1.test")
+table_test
+
+clusters <- 5
+matplot(1:clusters , cbind(km$withinss,km.test$withinss), pch=19 , col=c("red","blue"),type="b",ylab="Dist. DENTRO DE grupos",xlab="Numbers of Centroids")
+legend("topleft",legend=c("Withinss Train","Withinss Test"),pch=19, col=c("red","blue"))
+```
+
 
 ###Modelo no supervisado HIERARCHICAL CLUSTERING.
 
@@ -784,7 +821,7 @@ plot(clusters)
 Como podemos ver en el dendograma una división apropiada podría ser 6.
 
 ```{r echo=FALSE}
-clusterCut <- cutree(clusters, 4)
+clusterCut <- cutree(clusters, 6)
 table(clusterCut, train_kmeans$CLAIM_FLAG)
 ```
  
@@ -811,12 +848,16 @@ modelo_rf <- train(CLAIM_FLAG ~ ., data = train_random_forest,
 modelo_rf
 
 plot(modelo_rf)
+
+
 ```
 
 
 Como podemos ver en la parte de entrenamiento el algoritmo toma distintos valores para las variables aleatorias elegidas en cada corte (mtry) y para el tipo de modelo utilizado para calcular la pureza de cada nodo.
 
 El valor final elegido es mtry = 17 y metodo de Gini con un accuracy de 76.13% y un capa del 32.21% ambos resultados son los mas altos de las pruebas realizadas.
+
+
 
 
 
@@ -830,6 +871,47 @@ kable_styling()
 ```
 En la prueba vemos que el accuracy es de 77.54% mejorando el train y el kappa de 35.98%. Como otras variables a tener en cuenta para ver la calidad del modelo esta la sensitivity que mide el acierto de los casos positivos entendido como positivo el identificar los que tienen accidente.Por otro lado la specificity nos dice que porcentage de valores negativos acertamos y este caso acertamos un 90% de los valores negativos.
 
+```{r}
+
+#pred_prob_rf_2 <- predict(modelo_rf, test_random_forest, type = "prob")
+#head(pred_prob_rf_2)
+#head(modelo_rf)
+set.seed(342)
+train=sample(1:nrow(train_random_forest),5500)
+model.rf=randomForest(train_random_forest$CLAIM_FLAG ~ . , data = train_random_forest, subset = train, importance = TRUE, proximity = TRUE)
+model.rf
+
+#head(train.rf)
+plot(model.rf)
+varImpPlot(model.rf)
+```
+
+
+```{r}
+importancia <- as.data.frame(model.rf$importance)
+
+importancia <- rownames_to_column(importancia,var = "variable")
+
+
+p1 <- ggplot(data = importancia, aes(x = reorder(variable, MeanDecreaseAccuracy),
+                               y = MeanDecreaseAccuracy,
+                               fill = MeanDecreaseAccuracy)) +
+      labs(x = "variable", title = "Reducción de Accuracy") +
+      geom_col() +
+      coord_flip() +
+      theme_bw() +
+      theme(legend.position = "bottom")
+
+p2 <- ggplot(data = importancia, aes(x = reorder(variable, MeanDecreaseGini),
+                               y = MeanDecreaseGini,
+                               fill = MeanDecreaseGini)) +
+      labs(x = "variable", title = "Reducción de pureza (Gini)") +
+      geom_col() +
+      coord_flip() +
+      theme_bw() +
+      theme(legend.position = "bottom")
+ggarrange(p1, p2)
+```
 
 ### GLM
 
@@ -874,12 +956,28 @@ plot(modelo_C50Tree)
 ```
 El accuracy y el kappa para el complexity parameter de un 0.01 es de 74% y de 17% respectivamente.
 
+```{r}
+set.seed(342)
+modelo.dt <- rpart(CLAIM_FLAG ~ ., method = "class", data = train_random_forest, cp=0.015)
+rpart.plot(modelo.dt, extra = 4)
+```
+```{r}
+printcp(modelo.dt)
+plotcp(modelo.dt)
+```
+
 ```{r echo=FALSE}
 pred_prob_tree <- predict(modelo_C50Tree, newdata = test_random_forest)
 confusionMatrix(data = pred_prob_tree, reference = test_random_forest$CLAIM_FLAG, positive = "SIacc")
 ```
 En este caso vemos que para el test empeora ligeramente pasando a un 73% de accuracy y un 15% de kappa. La sensitivity es de 17% que es realmente baja.
 
+```{r}
+test.dt <- predict(modelo.dt, test_random_forest, type = "class")
+table(test.dt, test_random_forest$CLAIM_FLAG)
+
+sum(test.dt==test_random_forest$CLAIM_FLAG)/length(test_random_forest$CLAIM_FLAG)
+```
 
 ###KNN
 
@@ -923,6 +1021,13 @@ modelo_svmrad
 plot(modelo_svmrad)
 ```
 Como vemos el mejor accuracy, que asciende a 76.5% lo obtenemos con el cost parameter mas elevado quiere decir que penalizamos más a los datos dentro de los margenes.
+```{r}
+set.seed(342)
+model.svm <- svm(CLAIM_FLAG ~ ., data = train_random_forest, methods = "class",  kernel = "radial")
+summary(model.svm)
+plot(model.svm, train_random_forest)
+
+```
 
 ```{r echo=FALSE}
 pred_prob_svm <- predict(modelo_svmrad, newdata = test_random_forest)
@@ -1102,7 +1207,7 @@ repeticiones <- 5
 # Hiperparámetros
 hiperparametros <- data.frame(parameter = "none")
 
-set.seed(123)
+set.seed(342)
 seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
 for (i in 1:(particiones * repeticiones)) {
   seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
@@ -1137,7 +1242,7 @@ repeticiones <- 5
 # Hiperparámetros
 hiperparametros <- data.frame(k = c(1, 2, 5, 10, 15, 20, 30, 50, 100, 200))
 
-set.seed(123)
+set.seed(342)
 seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
 for (i in 1:(particiones * repeticiones)) {
   seeds[[i]] <- sample.int(1000, nrow(hiperparametros)) 
@@ -1174,7 +1279,7 @@ repeticiones <- 5
 # Hiperparámetros
 #hiperparametros <- data.frame(parameter = "none")
 hiperparametros <- data.frame(cp = c(0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.016, 0.017, 0.018, 0.019))
-set.seed(123)
+set.seed(342)
 seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
 for (i in 1:(particiones * repeticiones)) {
   seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
@@ -1211,7 +1316,7 @@ hiperparametros <- expand.grid(mtry = c(4),
                                min.node.size = c(1, 2, 3, 4, 5, 10, 15, 20, 30),
                                splitrule = "gini")
 
-set.seed(123)
+set.seed(342)
 seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
 for (i in 1:(particiones * repeticiones)) {
   seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
@@ -1248,12 +1353,12 @@ repeticiones <- 5
 
 
 # Hiperparámetros
-hiperparametros <- expand.grid(sigma = c(0.001, 0.01, 0.1, 0.5, 1),
-                               C = c(1 , 20, 50, 100, 200, 500, 700))
+hiperparametros <- expand.grid(sigma = c(0.001),
+                               C = c(200))
 #hiperparametros <- expand.grid(sigma = c(0.001),
 #                               C = c(1 , 20))
 
-set.seed(123)
+set.seed(342)
 seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
 for (i in 1:(particiones * repeticiones)) {
   seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
@@ -1456,7 +1561,7 @@ La técnica de análisis de varianza (ANOVA) constituye la herramienta básica p
 # tener B+1 semillas donde B = particiones * repeticiones.
 particiones = 10
 repeticiones = 5
-set.seed(123)
+set.seed(342)
 seeds <- sample.int(1000, particiones * repeticiones + 1)
 
 # Control del filtrado
@@ -1464,7 +1569,7 @@ ctrl_filtrado <- sbfControl(functions = rfSBF, method = "repeatedcv",
                             number = particiones, repeats = repeticiones,
                             seeds = seeds, verbose = FALSE, 
                             saveDetails = TRUE, allowParallel = TRUE)
-set.seed(234)
+set.seed(342)
 rf_sbf <- sbf(CLAIM_FLAG ~ ., data = train_random_forest,
               sbfControl = ctrl_filtrado,
               # argumentos para el modelo de evaluación
