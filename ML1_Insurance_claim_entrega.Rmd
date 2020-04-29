@@ -12,7 +12,6 @@ output:
     number_sections: true
     theme: flatly
     code_folding: hide
-  # pdf_document: default
 ---
 
 # Objetivo del Proyecto
@@ -21,12 +20,10 @@ El objetivo del proyecto es poder identificar que factores de los asegurados afe
 
 La siniestralidad afecta de lleno en la cuenta de resultados de la aseguradora y una buena comprensión de estos factores hará que la compañía pueda cuantificar bien el riesgo y por lo tanto el importe a cobrar al asegurado e incluso que pueda rechazar ciertos riesgos que no quiera asumir.
 
-Para poder realizar este objetivo contamos con con un dataset que contiene informacion sobre el tomador y el vehículo a asegurar. Además vamos a tener dos variables objetivo:
+Contamos con un dataset que contiene informacion sobre el tomador y el vehículo a asegurar. La variable objetivo es en este caso CLAIM FLAG, nos indica si ha tenido acciente o no.
 
-+ Por un lado la variable que nos indica si ha tenido o no accidente en el año en curso.
-+ Por otro la variable de cuantía del siniestro en el año en curso.
 
-Para ello el dataset tiene 27 variables que vamos a explicar a continuación:
+El dataset tiene 27 variables que vamos a explicar a continuación:
 
 **ID** - ID de poliza
 
@@ -85,54 +82,44 @@ Para ello el dataset tiene 27 variables que vamos a explicar a continuación:
 Para poder realizar el proyecto vamos a necesitar las siguientes librerías. Algunas de estas librerías son específicas para el tratamiento de nulos, para la representación gráfica o para el desarrollo de modelos.
 
 
-```{r message=FALSE}
+```{r message=FALSE, warning=FALSE}
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(egg)
 library(GGally)
-
 library(ISLR)
 library(car)
 library(DMwR2)
 library(faraway)
 library(mlbench)
-
 library(knitr)
 library(kableExtra)
 library(htmltools)
 library(bsplus)
 library(RColorBrewer)
-
 library(lattice)
 library(VIM)
 library(mice)
-
 library(stringr)
 library(corrplot)
-
 library(tidyverse)
 library(lsr)
 library(cowplot)
-
 library(tidymodels)
 library(skimr)
 library(tibble)
-
 library(lubridate)
 library(padr)
 library(caret)
-
 library(partykit)
 library(DMwR)
 library(lime)
 library(parsnip)
-
 library(randomForest)
 library(cluster)
 library(RColorBrewer)
 library(factoextra)
-
 library(readr)
 library(dplyr)
 library(ggplot2)
@@ -141,141 +128,67 @@ library(Rtsne)
 library(pROC)
 library(ggpubr)
 library(ROCR)
-
 library(rpart)
 library(rpart.plot)
 library(e1071)
-
 ```
 
 # Estudio exploratorio de los datos
 
-Importamos el dataset obtenido en kaggle desde un CSV con separación por comas.
-
 ```{r}
 insurance <- read.csv(file="car_insurance_claim.csv", header=TRUE, sep=",")
-```
-
-Primero vamos a mirar la dimensión del dataset para realizar una división eficaz en dos subsets. Uno será el de entrenamiento y el otro el de test.
-
-```{r, echo=FALSE}
 dim(insurance)
 ```
 
-Al ver que la longitud de la muestra es de 10302 vamos a repartir un 68% en train al cual denominaremos "train", 20 en test que denominaremos "test" y un 12 para validation.
-
 ```{r}
-set.seed(342)
-sample <- sample.int(n = nrow(insurance), size = floor(.80*nrow(insurance)), replace = F)
-train_temp <- insurance[sample, ]
-test  <- insurance[-sample, ]
-# Validation
-sample_validation <- sample.int(n = nrow(train_temp), size = floor(.85*nrow(train_temp)), replace = F)
-train <- train_temp[sample_validation,]
-validation <- train_temp[-sample_validation,]
+set.seed(101)
+
+trainIndex <- createDataPartition(insurance$CLAIM_FLAG, p = .75, 
+                                  list = FALSE, 
+                                  times = 1)
+train <- insurance[trainIndex,]
+test <- insurance[-trainIndex,]
 
 # Contamos el numero de líneas para el análisis.
 n_train <- nrow(train)
 n_test <- nrow(test)
-n_validation <- nrow(validation)
 ```
-
-Una vez generados los dos subsets vamos a realizar un primer análisis visual del dataset viendo los cinco primeros registros.
 
 # Limpieza de los datos
 
 ## Transformaciones de variables cuantitativas
 
-El primer paso es adaptar el formato de las variables que se encuentran en dólares, ya que se presentan con el símbolo de dolar delante y con separados de miles con coma. 
-
-```{r }
+```{r}
 # Cambiar "," por "." y eliminar los $
-
 train$INCOME <- str_replace_all(train$INCOME, ",", "")
 train$INCOME <- str_sub(train$INCOME, 2, -1)
-
 train$HOME_VAL <- str_replace_all(train$HOME_VAL, ",", "")
 train$HOME_VAL <- str_sub(train$HOME_VAL, 2, -1)
-
 train$BLUEBOOK <- str_replace_all(train$BLUEBOOK, ",", "")
 train$BLUEBOOK <- str_sub(train$BLUEBOOK, 2, -1)
-
 train$OLDCLAIM <- str_replace_all(train$OLDCLAIM, ",", "")
 train$OLDCLAIM <- str_sub(train$OLDCLAIM, 2, -1)
-
 train$CLM_AMT <- str_replace_all(train$CLM_AMT, ",", "")
 train$CLM_AMT <- str_sub(train$CLM_AMT, 2, -1)
 ```
 
 ```{r}
-sapply(train, class)
-```
-
-Tras esta transformación, vemos que las variables han pasado a ser de tipo "character" por lo que vamos a convertirlas en numéricas.
-
-```{r}
 # Cambiar variables tipo "character" a "numeric"
-
 train$INCOME <- as.numeric(train$INCOME)
-
 train$HOME_VAL <- as.numeric(train$HOME_VAL)
-
 train$BLUEBOOK <- as.numeric(train$BLUEBOOK)
-
 train$OLDCLAIM <- as.numeric(train$OLDCLAIM)
-
 train$CLM_AMT <- as.numeric(train$CLM_AMT)
-
 sapply(train, class)
 ```
-Aqui podemos ver que ya están en formato numérico por lo que la transformación ha funcionado.
 
 ## Procesado de variables cualitativas
-
-Mediante el resumen obtenido con la funcion summary se puede ver que nuestro dataset contiene variables categóricas, ya sea tipo booleano o con varios niveles. Vamos a identificarlas y en algunos casos a transformarlas.
-
-En primer lugar, es necesario quitar el prefijo "z_" de algunos valores que encontramos en las variables MSTATUS, GENDER, CAR_TYPE y URBANICITY.
 
 ```{r warning=FALSE}
 # Quitar prefijo z_
 train <- train %>% mutate_if(is.factor,funs(str_replace(.,"z_", "")))
 sapply(train, class)
 ```
-
-Por otro lado, vamos a obtener un listado del numero de posibles valores que pueden tomar todos los campos del dataset. Para ello utilizamos la funcion "gather"" para poner los nombres de las columnas como filas y agrupamos y contamos el número de valores distintos por columna.
-
-```{r}
-num_valores_variable <- train %>% gather() %>% group_by(key) %>%
-summarize(uniques = n_distinct(value))
-
-num_valores_variable <- data.frame(num_valores_variable,stringsAsFactors=FALSE)
-
-num_valores_variable <- data.frame(Variable = num_valores_variable[,1],Num.uniques = num_valores_variable[,2],stringsAsFactors=FALSE)
-
-num_valores_variable$Variable <- as.vector(num_valores_variable$Variable)
-
-num_valores_variable[order(num_valores_variable[,2]),]
-```
-
-Viendo la tabla de arriba podemos decir que tenemos 8 variables que tienen dos posibles niveles y otras 3 (OCCUPATION, CAR_TYPE Y EDUCATION) que son categóricas con más de dos niveles.
-
-Vamos a explorar estas variables a ver que posibles valores pueden tomar.
-
-```{r, echo=FALSE}
-# EDUCATION
-print("EDUCATION")
-unique(train$EDUCATION)
-# OCUPATION
-print("OCCUPATION")
-unique(train$OCCUPATION)
-# CAR_TYPE
-print("CAR_TYPE")
-unique(train$CAR_TYPE)
-```
-
-Vemos que la variable EDUCATION tiene 5 niveles, la de "CAR_TYPE" tiene 7 y la de "OCCUPATION" tiene 10, una de ellas en blanco por lo que vamos a generar una categoría "others" con estos registros en los que no tenemos información. 
-
-Ademas Colocamos la variable "EDUCATION" por categorias temporales para hacer un mejor análisis posterior de esta variable.
 
 ```{r}
 train$OCCUPATION <- factor(train$OCCUPATION,
@@ -284,24 +197,17 @@ train$OCCUPATION <- factor(train$OCCUPATION,
                           labels = c("Others", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"))
 ```
 
-Las transformaciones anteriores convierten las variables tratadas a tipo "character", por lo que vamos a convertir a factores las variables que originalmente eran categóricas.
-
 ```{r}
 # Pasar columnas tipo "character" a "factor"
-
 train <- train %>% mutate_if(is.character, as.factor)
 sapply(train, class)
 ```
 
-Al ver que las variables categóricas con dos posibles valores no tienen nulos vamos a convertirlas en valores en 0 y 1 donde el 1 será el valor "Si", "Comercial" , "Urbano" y "Mujer" dependiendo la variable.
-
 ```{r}
 # Creamos una tabla con las variables y los valores que transformaremos con el valor 1
-
 variables_binarias <- data.frame(Variable = c("CAR_USE","MSTATUS","PARENT1","RED_CAR","REVOKED","GENDER","URBANICITY"),
 	valor_1 = c("Commercial","Yes","Yes","yes","Yes","M","Highly Urban/ Urban"),
 	stringsAsFactors=FALSE)
-
 for(i in 1:length(variables_binarias$Variable)){
   var <- variables_binarias$Variable[i]
   true_value <- variables_binarias$valor_1[i]
@@ -309,140 +215,42 @@ for(i in 1:length(variables_binarias$Variable)){
 }
 ```
 
-```{r, echo=FALSE}
-train_numeric <- train %>% na.omit() %>% select(CAR_AGE, CLAIM_FLAG, MVR_PTS, CLM_FREQ, TIF, TRAVTIME, AGE, HOMEKIDS, YOJ, KIDSDRIV, INCOME, HOME_VAL, BLUEBOOK, CLM_AMT, OLDCLAIM) 
+### Imputación de variables
 
-cor(train_numeric, method = "spearman") %>% 
-corrplot( method = 'color', addCoef.col = "black", tl.cex=0.7, number.cex=0.6)
-```
-
-Efectivamente así lo parece por lo que vamos a hacer un análisis de como se distribuyen los nulos entre estas variables
-
-### Imputación variable INCOME
-
-```{r, echo=FALSE}
-train %>% select(INCOME, HOME_VAL) %>% marginplot()
-```
-
-En el gráfico de arriba podemos observar que las variables HOME_VAL e INCOME tienen una correlación positiva y que los registros en los que la otra variable son nulos y no nulos se distribuyen de la misma manera, por lo que podríamos utilizar un método de regresión lineal para rellenar estos valores aunque como hemos comentado antes se puede ver la linea de puntos en el cero procedente de HOME_VAL. Teniendo en cuenta esto, no pensamos que pueda ser la variable más acertada para rellenar nulos. Además, debido a esto, al hacerlo algunos valores de INCOME aparecen en negativo.
-
-Sabiendo lo anterior, vamos a intentar utilizar otra variable que tenga correlación con INCOME y que sus datos sean robustos.
-
-En este caso proponemos utilizar BLUEBOOK que es el valor del coche y que tiene cierta correlación con INCOME. Además creemos que puede ser mas acertado utilizar el método KNN.
-
-```{r, echo=FALSE}
-train %>% select(INCOME, BLUEBOOK) %>% VIM::kNN() %>% marginplot(., delimiter="_imp")
-```
-
-Lo que vemos en el gráfico es que la imputación de los valores faltantes por el metodo KNN en su mayoría sería de manera lineal con lo que nos convence como para utilizarlo de proxy. Podemos decir que podríamos buscar otros métodos como transformarlas con logaritmos para buscar relaciones más ajustadas y despues deshacer dicho cambio.
-
-```{r, echo=FALSE}
+```{r, echo=FALSE, cache=TRUE}
+# INCOME
 stoch_imp <- train %>% VIM::kNN(., variable=c("INCOME","BLUEBOOK"))
 d1 = train$INCOME
 train$INCOME <- stoch_imp$INCOME
-```
-
-```{r warning=FALSE, message=FALSE}
 x <- data.frame(d1 = d1, d2 = stoch_imp$INCOME)
 data <- melt(x)
 ggplot(data,aes(x=value, fill=variable)) + geom_density(alpha=0.25)
-```
 
-### Imputación variable CAR_AGE
-
-Una vez imputado INCOME vamos a analizar ahora CAR_AGE para ver como se comporta contra otras variables. En concreto tomamos las variables con las que tiene mas correlacion y lo graficamos.
-
-```{r echo=FALSE, fig.height=8, fig.width=10}
-train %>% select(4,25,7,12) %>%
-  na.omit() %>%
-  ggpairs(columns = 1:3, ggplot2::aes(colour=EDUCATION))
-```
-
-Vemos que con Income tiene una correlaciónde un 40%. Vamos a ver estas dos variables más en detalle.
-
-```{r, echo=FALSE}
-train %>% select(INCOME, CAR_AGE) %>% marginplot()
-```
-
-En ambos gráficos podemos observar como la distribucion de CAR_AGE varia por la variable "EDUCATION" y además está correlacionada de manera significativa con INCOME por lo que vamos a realizar un KNN con estas variables.
-
-
-```{r, echo=FALSE}
+# CAR_AGE
 stoch_imp <- train %>% VIM::kNN(., variable=c("CAR_AGE", "INCOME","EDUCATION"))
 d1 = train$CAR_AGE
 train$CAR_AGE <- stoch_imp$CAR_AGE
-```
-
-```{r warning=FALSE, message=FALSE}
 x <- data.frame(d1 = d1, d2 = stoch_imp$CAR_AGE)
 data <- melt(x)
 ggplot(data,aes(x=value, fill=variable)) + geom_density(alpha=0.25)
-```
+train <- train[train$CAR_AGE > -1,]
 
-Adicionalmente como habiamos visto, hay un registro cuyo valor de CAR_AGE es -3 asi que vamos a eliminar este registro. Podríamos aplicar otras reglas como imputarle un 1 o un 3 entendiendo que ha sido un error de imputación pero al ser solo un registros no afectamos el análisis eliminandolo.
-
-```{r}
-train <- train[train$CAR_AGE > -1, ]
-summary(train$CAR_AGE)
-```
-
-### Imputación variable YOJ
-
-Ahora vamos a rellenar los valores faltantes respecto a los años en el trabajo(YOJ) y a la edad(AGE) teniendo en cuenta que para esta última variable el porcentaje de nulos no supera el 0.07%.
-
-Primero vamos a analizar el comportamiento de estas variables contra las variables que mas correlación tienen.
-
-```{r eval=FALSE, fig.height=8, fig.width=10}
-train %>% select(4,6,7,12) %>%
-  na.omit() %>%
-  ggpairs(columns = 1:3, ggplot2::aes(colour=EDUCATION))
-```
-
-Aplicamos una imputación de datos simular a la de CAR_AGE. Según la tabla de correlación de arriba y dada su relación con la variable EDUCATION, de forma indirecta, haremos imputación por KNN teniendo en cuenta los valores de las variables INCOME y EDUCATION y añadiré también las variables HOMEKIDS y AGE, en este caso.
-
-Podemos ver que a medida que avanzan los años de trabajo aumenta el rango de la distribución del income por año y de ahi entendemos que tambien la media de cada año por lo que nos parece que KNN es un método muy apropiado para la imputación.
-
-```{r, echo=FALSE}
+# YOJ
 stoch_imp <- train %>% VIM::kNN(., variable=c("INCOME","YOJ","EDUCATION", "HOMEKIDS", "AGE"))
 d1 = train$YOJ
 train$YOJ <- stoch_imp$YOJ
-```
-
-```{r warning=FALSE, message=FALSE}
 x <- data.frame(d1 = d1, d2 = stoch_imp$YOJ)
 data <- melt(x)
 ggplot(data,aes(x=value, fill=variable)) + geom_density(alpha=0.25)
-```
 
-### Imputación variable AGE
-
-Ahora rellenamos los 7 registros de AGE con una formula ya que tenemos la fecha de nacimiento y lo que vamos a hacer es calcularlo para estos seis registros que nos faltan.
-
-```{r}
+# AGE
 train$BIRTH <- as.character(train$BIRTH)
 train <- train %>% mutate(AGE=ifelse(is.na(AGE), 120-as.numeric(substr(BIRTH, nchar(BIRTH)-1, nchar(BIRTH))), AGE))
-```
 
-### Imputación variable HOME_VAL
-
-Finalmente rellenamos HOME_VAL aunque la mantendremos en cuarentena como un KNN de la variable INCOME
-
-```{r warning=FALSE}
+# HOME_VAL
 stoch_imp <- train %>%  VIM::kNN(., variable=c("INCOME","HOME_VAL"), k=1)
 train$INCOME <- stoch_imp$INCOME
 train$HOME_VAL <- stoch_imp$HOME_VAL
-```
-
-### Resumen imputación datos faltantes
-
-```{r echo=FALSE}
-missing_values <- aggr(train, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE,
-                  labels=names(train), cex.axis=.7, gap=3, 
-                  ylab=c("Histogram of missing data","Pattern"))
-```
-
-```{r}
-summary(train)
 ```
 
 ```{r echo=FALSE}
@@ -455,7 +263,6 @@ train["bin_MVR_PTS"] <- ifelse(train["MVR_PTS"] > 6,1,0)
 train["bin_OCCUPATION"] <- ifelse(train["OCCUPATION"] == "Lawyer" | train["OCCUPATION"] == "Manager"| train["OCCUPATION"] == "Doctor" ,0,1)
 train["bin_EDUCATION"] <- ifelse(train["EDUCATION"] == "1-<High School" | train["EDUCATION"] == "2-High School",1,0)
 train["bin_CAR_TYPE"] <- ifelse(train["CAR_TYPE"] == "Minivan",0,1)
-
 # Variables logarítmicas
 train$CLM_AMT_log <- log(train$CLM_AMT,10)
 train$INCOME_log <- log(train$INCOME+1,10)
@@ -463,215 +270,79 @@ train$BLUEBOOK_log <- log(train$BLUEBOOK,10)
 train$OLDCLAIM_log <- log(train$OLDCLAIM+1,10)
 ```
 
-
 ```{r echo=FALSE}
-#train$CLAIM_FLAG <- factor(train$CLAIM_FLAG)
-
 train$EDUCATION <- factor(train$EDUCATION,
                           ordered = TRUE,
                           levels = c("<High School", "High School", "Bachelors", "Masters", "PhD"),
                           labels = c("1-<High School", "2-High School", "3-Bachelors", "4-Masters", "PhD"))
-
-
 ```
-## Consideraciones sobre el modelo a desarrollar
-
-Una vez realizado todo el análisis procederiamos a seleccionar variables para nuestro modelo. Aunque sería interesante contar con dos modelos en secuencia que nos permitieran predecir:
-
-  1. Si va a tener accidente o no
-  2. En el caso de tener accidente, cúanto sería el coste
-
-No podemos predecir el primer caso mediante un modelo lineal, necesitamos alguno de los modelos de clasificación que serán estudiados en un futuro. A priori, creemos que el modelo que más se ajustaría sería un GLM, que es el que se utiliza en las compañías de seguros para este tipo de problemas.
-
-Para este proyecto vamos a simular que contamos con el primer modelo. Para ello, vamos utilizar sólo aquellos registros donde el CLAIM_FLAG sea 1, esto hace que nos quedemos sólo con aquellos registros que han tenido accidente.
-
-Con esto el siguiente paso sería analizar las variables pero esta vez contra nuestra segunda variable objetivo que es el importe del siniestro (CLM_AMT)
-
-
 
 # MODIFICACIONES PARA EL SUBSET DE TEST
 
 ```{r}
-
 # Cambiar "," por "." y eliminar los $
 test$INCOME <- str_replace_all(test$INCOME, ",", "")
 test$INCOME <- str_sub(test$INCOME, 2, -1)
-
 test$HOME_VAL <- str_replace_all(test$HOME_VAL, ",", "")
 test$HOME_VAL <- str_sub(test$HOME_VAL, 2, -1)
-
 test$BLUEBOOK <- str_replace_all(test$BLUEBOOK, ",", "")
 test$BLUEBOOK <- str_sub(test$BLUEBOOK, 2, -1)
-
 test$OLDCLAIM <- str_replace_all(test$OLDCLAIM, ",", "")
 test$OLDCLAIM <- str_sub(test$OLDCLAIM, 2, -1)
-
 test$CLM_AMT <- str_replace_all(test$CLM_AMT, ",", "")
 test$CLM_AMT <- str_sub(test$CLM_AMT, 2, -1)
-
 # Cambiar variables tipo "character" a "numeric"
 test$INCOME <- as.numeric(test$INCOME)
-
 test$HOME_VAL <- as.numeric(test$HOME_VAL)
-
 test$BLUEBOOK <- as.numeric(test$BLUEBOOK)
-
 test$OLDCLAIM <- as.numeric(test$OLDCLAIM)
-
 test$CLM_AMT <- as.numeric(test$CLM_AMT)
-
 # Quitar prefijo z_
 test <- test %>% mutate_if(is.factor,funs(str_replace(.,"z_", "")))
-
 # Renombrado labels variable OCCUPATION
 test$OCCUPATION <- factor(test$OCCUPATION,
                           ordered = FALSE,
                           levels = c("", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"),
                           labels = c("Others", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"))
-
 test$EDUCATION <- factor(test$EDUCATION,
                           ordered = TRUE,
                           levels = c("<High School", "High School", "Bachelors", "Masters", "PhD"),
                           labels = c("1-<High School", "2-High School", "3-Bachelors", "4-Masters", "PhD"))
-
-
 # Pasar columnas tipo "character" a "factor"
 test <- test %>% mutate_if(is.character, as.factor)
-
 # Creamos una tabla con las variables y los valores que transformaremos con el valor 1
 for(i in 1:length(variables_binarias$Variable)){
   var <- variables_binarias$Variable[i]
   true_value <- variables_binarias$valor_1[i]
   test[,var] <- ifelse(test[,var] == true_value,1,0)
 }
-
 # Imputación de datos faltantes
-
 train_knn_imp <- train %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
 test_knn_imp <- test %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
-
 train_knn_imp$isTrain <- rep(1, nrow(train_knn_imp))
 test_knn_imp$isTrain <- rep(0, nrow(test_knn_imp))
 train_test_knn_imp <- rbind(train_knn_imp,test_knn_imp)
 sapply(test, function(x) sum(is.na(x)))
-
 # Imputado de missings varible INCOME
 knn_income_imp <- train_test_knn_imp %>% VIM::kNN(., variable=c("INCOME","BLUEBOOK")) %>% filter(isTrain==0)
 test$INCOME <- knn_income_imp$INCOME
-
 # Imputado de missings varible CAR_AGE
 knn_carage_imp <- train_test_knn_imp %>% VIM::kNN(., variable=c("CAR_AGE", "INCOME","EDUCATION")) %>%   filter(isTrain==0)
 test$CAR_AGE <- knn_carage_imp$CAR_AGE
-
 # Imputado de missings varible YOJ
 knn_yoj_imp <- train_test_knn_imp %>% VIM::kNN(., variable=c("INCOME","YOJ","EDUCATION", "HOMEKIDS", "AGE")) %>% filter(isTrain==0)
 test$YOJ <- knn_yoj_imp$YOJ
-
 # Imputado de missings variable AGE
 test$BIRTH <- as.character(test$BIRTH)
 test <- test %>% mutate(AGE=ifelse(is.na(AGE), 120-as.numeric(substr(BIRTH, nchar(BIRTH)-1, nchar(BIRTH))), AGE))
 sapply(test, function(x) sum(is.na(x)))
-
 test["education_bin"] <- ifelse(test["EDUCATION"] == "1-<High School" | test["EDUCATION"] == "2-High School",1,0)
 test_target <- test
 test_target$CLM_AMT_log <- log(test$CLM_AMT,10)
 test_target$BLUEBOOK_log <- log(test$BLUEBOOK,10)
 test_target$OLDCLAIM_log <- log(test$OLDCLAIM+1,10)
-#test_target$CLAIM_FLAG <- factor(test_target$CLAIM_FLAG)
-```
-```{r results = "hide"}
-# MODIFICACIONES PARA EL SUBSET DE VALIDATION
-
-# Cambiar "," por "." y eliminar los $
-validation$INCOME <- str_replace_all(validation$INCOME, ",", "")
-validation$INCOME <- str_sub(validation$INCOME, 2, -1)
-
-validation$HOME_VAL <- str_replace_all(validation$HOME_VAL, ",", "")
-validation$HOME_VAL <- str_sub(validation$HOME_VAL, 2, -1)
-
-validation$BLUEBOOK <- str_replace_all(validation$BLUEBOOK, ",", "")
-validation$BLUEBOOK <- str_sub(validation$BLUEBOOK, 2, -1)
-
-validation$OLDCLAIM <- str_replace_all(validation$OLDCLAIM, ",", "")
-validation$OLDCLAIM <- str_sub(validation$OLDCLAIM, 2, -1)
-
-validation$CLM_AMT <- str_replace_all(validation$CLM_AMT, ",", "")
-validation$CLM_AMT <- str_sub(validation$CLM_AMT, 2, -1)
-
-# Cambiar variables tipo "character" a "numeric"
-validation$INCOME <- as.numeric(validation$INCOME)
-
-validation$HOME_VAL <- as.numeric(validation$HOME_VAL)
-
-validation$BLUEBOOK <- as.numeric(validation$BLUEBOOK)
-
-validation$OLDCLAIM <- as.numeric(validation$OLDCLAIM)
-
-validation$CLM_AMT <- as.numeric(validation$CLM_AMT)
-
-# Quitar prefijo z_
-validation <- validation %>% mutate_if(is.factor,funs(str_replace(.,"z_", "")))
-
-# Renombrado labels variable OCCUPATION
-validation$OCCUPATION <- factor(validation$OCCUPATION,
-                          ordered = FALSE,
-                          levels = c("", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"),
-                          labels = c("Others", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"))
-
-# Pasar columnas tipo "character" a "factor"
-validation <- validation %>% mutate_if(is.character, as.factor)
-
-# Creamos una tabla con las variables y los valores que transformaremos con el valor 1
-for(i in 1:length(variables_binarias$Variable)){
-  var <- variables_binarias$Variable[i]
-  true_value <- variables_binarias$valor_1[i]
-  validation[,var] <- ifelse(validation[,var] == true_value,1,0)
-}
-
-# Imputación de datos faltantes
-
-train_knn_imp <- train %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
-validation_knn_imp <- validation %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
-
-train_knn_imp$isTrain <- rep(1, nrow(train_knn_imp))
-validation_knn_imp$isTrain <- rep(0, nrow(validation_knn_imp))
-train_validation_knn_imp <- rbind(train_knn_imp,validation_knn_imp)
-sapply(validation, function(x) sum(is.na(x)))
-
-# Imputado de missings varible INCOME
-knn_income_imp <- train_validation_knn_imp %>% VIM::kNN(., variable=c("INCOME","BLUEBOOK")) %>% filter(isTrain==0)
-validation$INCOME <- knn_income_imp$INCOME
-
-# Imputado de missings varible CAR_AGE
-knn_carage_imp <- train_validation_knn_imp %>% VIM::kNN(., variable=c("CAR_AGE", "INCOME","EDUCATION")) %>%   filter(isTrain==0)
-validation$CAR_AGE <- knn_carage_imp$CAR_AGE
-
-# Imputado de missings varible YOJ
-knn_yoj_imp <- train_validation_knn_imp %>% VIM::kNN(., variable=c("INCOME","YOJ","EDUCATION", "HOMEKIDS", "AGE")) %>% filter(isTrain==0)
-validation$YOJ <- knn_yoj_imp$YOJ
-
-# Imputado de missings variable AGE
-validation$BIRTH <- as.character(validation$BIRTH)
-validation <- test %>% mutate(AGE=ifelse(is.na(AGE), 120-as.numeric(substr(BIRTH, nchar(BIRTH)-1, nchar(BIRTH))), AGE))
-sapply(validation, function(x) sum(is.na(x)))
-
-validation["education_bin"] <- ifelse(validation["EDUCATION"] == "1-<High School" | validation["EDUCATION"] == "2-High School",1,0)
-validation_target <- validation
-validation_target$CLM_AMT_log <- log(validation$CLM_AMT,10)
-validation_target$BLUEBOOK_log <- log(validation$BLUEBOOK,10)
-validation_target$OLDCLAIM_log <- log(validation$OLDCLAIM+1,10)
 ```
 
-
-Obtenemos un error medio de 2904,47€ para las predicciones obtenidas del subset de validation.
-
-# Conclusiones
-
-Tras el análisis del modelo obtenido, podemos concluir que el modelo de regresión lineal construido no es capaz de explicar la variable objetivo CLM_AMT. Creemos que con los datos disponibles no recogemos toda la información que deberíamos para poder predecir esta variable, ya que en muchos de estos accidentes la cuantía no solo depende de los datos del propio asegurado sino que suelen haber más personas/activos involucrados de los que no tenemos ninguna información. En mucha ocasiones las aseguradoras piden como dato el código postal de la persona para poder ver cual es el valor medio de los vehículos de la zona con los cuales sería más probable que esta persona tuviera un accidente.
-
-## Trabajo futuro
-
-Tenemos la impresión de que con estos datos si que seríamos capaces de poder explicar la variable objetivo CLAIM_FLAG, que nos predeciría si la persona va a tener un accidente o no. Con esta información seríamos capaces de gestionar el riesgo de la cartera, que afecta directamente al beneficio.
 
 ## Modelos para la predicción de la variable CLAIM FLAG
 
@@ -721,7 +392,7 @@ Primero vamos a buscar el punto optimo de cluster en funcion del minimo error.
  
  Vemos en la figura que la pendiente varía levemente entre diferentes numero de cluster y a partir de 5 no varía sustancialmente por lo que elegiremos 5 como numero de centroides. 
  
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
 # Initialize total within sum of squares error: wss
 wss <- 0
 wsr <- 0
@@ -764,7 +435,7 @@ print("La Varianza explicada con cinco clusters es")
 
 Posteriormente al elegir el numero de centroides vamos a ejecutar el modelo y ver las medias de cada variable en cada Cluster y de este modo poder ver si hay diferencias en la siniestralidad (Variable CLAIM FLAG)
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 set.seed(342)
 km <- kmeans(xiris, 5, nstart = 1)
 km
@@ -775,10 +446,6 @@ plot(train_kmeans$AGE, train_kmeans$CLAIM_FLAG, col=km$cluster, xlab="age", ylab
 table(km$cluster, train_kmeans$CLAIM_FLAG)
 ```
 
-
-
-
-
 Lo que podemos ver que en los diferentes cluster es que tenemos 3 medias diferenciadas en los 5 cluster de la variable CLAIM_FLAG.
 
 Podriamos decir que tenemos un cluster sin siniestralidad, otros dos con una siniestralidad de un 26% y otros dos con una siniestralidad del 50%.
@@ -786,7 +453,7 @@ Podriamos decir que tenemos un cluster sin siniestralidad, otros dos con una sin
 Si nos fijamos en el numero de registros por cluster un 60% esta en la tarifa del 26% mientras que el otro 40% estaría repartido en 20% buenos y 20% malos conductores.
 
 
-```{r}
+```{r cache=TRUE}
 set.seed(342)
 
 xiris.test <- scale(test_kmeans)
@@ -814,13 +481,13 @@ legend("topleft",legend=c("Withinss Train","Withinss Test"),pch=19, col=c("red",
 
 ###Modelo no supervisado HIERARCHICAL CLUSTERING.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 clusters <- hclust(dist(train_kmeans))
 plot(clusters)
 ```
 Como podemos ver en el dendograma una división apropiada podría ser 6.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 clusterCut <- cutree(clusters, 6)
 table(clusterCut, train_kmeans$CLAIM_FLAG)
 ```
@@ -839,7 +506,7 @@ El modelo random forest nos va a permitir obtener una clasificación de clientes
 
 Para ello utilizamos la funcion train del paquete caret que nos permite amoldar la formula al modelo y con los distintos parametros además de darnos una pequeña selección de valores de los parametros que no definamos y quedarse con los que mejor accuracy tiene par ala parte de test.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 set.seed(342)
 modelo_rf <- train(CLAIM_FLAG ~ ., data = train_random_forest,
                    method = "ranger",
@@ -871,7 +538,7 @@ kable_styling()
 ```
 En la prueba vemos que el accuracy es de 77.54% mejorando el train y el kappa de 35.98%. Como otras variables a tener en cuenta para ver la calidad del modelo esta la sensitivity que mide el acierto de los casos positivos entendido como positivo el identificar los que tienen accidente.Por otro lado la specificity nos dice que porcentage de valores negativos acertamos y este caso acertamos un 90% de los valores negativos.
 
-```{r}
+```{r cache=TRUE}
 
 #pred_prob_rf_2 <- predict(modelo_rf, test_random_forest, type = "prob")
 #head(pred_prob_rf_2)
@@ -917,7 +584,7 @@ ggarrange(p1, p2)
 
 Para el modelo de regresión lineal en el cual no hay que añadir parametros indicamos a la función que el metodo es un GLM con la metrica de decisión el accuracy y que el modelo es de clasificación.
 
-```{r}
+```{r cache=TRUE}
 set.seed(342)
 modelo_logistic <- train(CLAIM_FLAG ~ ., data = train_random_forest,
                          method = "glm",
@@ -943,7 +610,7 @@ Los árboles de decisión es un modelo de predicción que partiendo de una base 
 
 En este modelo vamos a dejar que train automaticamente haga la poda y nos de los resultados de varias podas.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 set.seed(342)
 modelo_C50Tree <- train(CLAIM_FLAG ~ ., data = train_random_forest,
                     #method = "C5.0Tree",
@@ -956,7 +623,7 @@ plot(modelo_C50Tree)
 ```
 El accuracy y el kappa para el complexity parameter de un 0.01 es de 74% y de 17% respectivamente.
 
-```{r}
+```{r, cache=TRUE}
 set.seed(342)
 modelo.dt <- rpart(CLAIM_FLAG ~ ., method = "class", data = train_random_forest, cp=0.015)
 rpart.plot(modelo.dt, extra = 4)
@@ -983,7 +650,7 @@ sum(test.dt==test_random_forest$CLAIM_FLAG)/length(test_random_forest$CLAIM_FLAG
 
 k-Nearest Neighbour Classification reconoce patrones en los datos, simplemente midiendo la distancia entre grupos de datos. Se trata de uno de los algoritmos más simples y robustos de aprendizaje automático.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 set.seed(342)
 modelo_knn <- train(CLAIM_FLAG ~ ., data = train_random_forest,
                     method = "knn",
@@ -1011,7 +678,7 @@ knnROC
 
 El modelo de maquinas de vectores soporte es un modelo que representa a los puntos de muestra en el espacio, separando las clases a 2 espacios lo más amplios posibles mediante un hiperplano de separación definido como el vector entre los 2 puntos, de las 2 clases, más cercanos al que se llama vector soporte. Cuando las nuevas muestras se ponen en correspondencia con dicho modelo, en función de los espacios a los que pertenezcan, pueden ser clasificadas a una o la otra clase.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 set.seed(342)
 modelo_svmrad <- train(CLAIM_FLAG ~ ., data = train_random_forest,
                    method = "svmRadial",
@@ -1021,7 +688,7 @@ modelo_svmrad
 plot(modelo_svmrad)
 ```
 Como vemos el mejor accuracy, que asciende a 76.5% lo obtenemos con el cost parameter mas elevado quiere decir que penalizamos más a los datos dentro de los margenes.
-```{r}
+```{r, cache=TRUE}
 set.seed(342)
 model.svm <- svm(CLAIM_FLAG ~ ., data = train_random_forest, methods = "class",  kernel = "radial")
 summary(model.svm)
@@ -1092,7 +759,7 @@ El primer paso que vamos a dar va a ser generar los componentes principales y ve
 Vemos que con 6 componentes principales explicamos el 50% de la varianza
 
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 pca_train <- prcomp(x = train_kmeans, scale = T, center = T)
 summary(pca_train)
 names(pca_train)
@@ -1145,13 +812,13 @@ Otra de las tecnicas de reducción de la dimensionalidad es stochastic neighbor 
 
 La ventaja con respecto a PCA es que recoge combinaciones no lineales entre las variables originales.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 colors = rainbow(length(unique(train$label)))
 names(colors) = unique(train$label)
 
 ## Executing the algorithm on curated data
-tsne <- Rtsne(train_kmeans, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500)
-exeTimeTsne<- system.time(Rtsne(train_kmeans, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500))
+tsne <- Rtsne(train_kmeans, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates = FALSE)
+# exeTimeTsne<- system.time(Rtsne(train_kmeans, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500))
 
 resultados <- as.data.frame(tsne$Y)
 colnames(resultados) <- c("dim_1", "dim_2")
@@ -1172,11 +839,11 @@ En este escenario, el método tSNE consigue que, al reducir la dimensionalidad, 
 
 Véase ahora la reducción a un espacio de 3 dimensiones.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 library(scatterplot3d)
 library(RColorBrewer)
 tsne <- Rtsne(X = train_kmeans, is_distance = FALSE, dims = 3, perplexity = 30,
-              theta = 0.5, max_iter = 500)
+              theta = 0.5, max_iter = 500, check_duplicates = FALSE)
 
 resultados <- as.data.frame(tsne$Y)
 colnames(resultados) <- c("dim_1", "dim_2", "dim_3")
@@ -1198,7 +865,7 @@ legend("bottom", legend = levels(resultados$numero),
 
 ###HIPERPARAMETROS DE GLM
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 # HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
 #===============================================================================
 particiones  <- 10
@@ -1235,7 +902,7 @@ modelo_logistic
 
 ###HIPERPARAMETROS DE KNN
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 particiones  <- 10
 repeticiones <- 5
 
@@ -1270,7 +937,7 @@ modelo_knn
 
 ###HIPERPARAMETROS DE DECISION TREE
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 # HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
 #===============================================================================
 particiones  <- 10
@@ -1305,7 +972,7 @@ modelo_C50Tree
 ```
 
 ###HIPERPARAMETROS DE RANDOM FOREST
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 # HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
 #===============================================================================
 particiones  <- 10
@@ -1345,7 +1012,7 @@ modelo_rf
 
 ###HIPERPARAMETROS DE SVM
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 # HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
 #===============================================================================
 particiones  <- 10
@@ -1387,7 +1054,7 @@ modelo_svmrad
 
 Primero vamos a analizar las medias de las valores que nos ha dado nuestro lanzamiento en train para el resultado que ha sido definitivamente el que mas accuracy tenia en cada modelo.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 modelos <- list(KNN = modelo_knn, logistic = modelo_logistic,
                 arbol = modelo_C50Tree, rf = modelo_rf, SVMRadial = modelo_svmrad)
 
@@ -1460,7 +1127,7 @@ comparaciones
 
 Acorde a las comparaciones por pares, no existen evidencias suficientes para considerar que la capacidad predictiva de los modelos Random Forest, SVM radial y logistica es distinta. 
 
-Por ultimo vamos a 
+Por ultimo vamos a comparar todos los modelos
 
 ```{r echo=FALSE}
 set.seed(342)
@@ -1505,6 +1172,7 @@ perf2
 plot(perf1)
 
 ```
+
 ###ROC modelo SVM
 
 ```{r echo=FALSE}
@@ -1554,7 +1222,7 @@ knnROC
 
 La técnica de análisis de varianza (ANOVA) constituye la herramienta básica para el estudio del efecto de uno o más factores (cada uno con dos o más niveles) sobre la media de una variable continua. Es por lo tanto el test estadístico a emplear cuando se desea comparar las medias de dos o más grupos. Esta técnica puede generalizarse también para estudiar los posibles efectos de los factores sobre la varianza de una variable.
 
-```{r echo=FALSE}
+```{r echo=FALSE, cache=TRUE}
 # =============================================================================
 
 # Se crea una semilla para cada partición y cada repetición: el vector debe
