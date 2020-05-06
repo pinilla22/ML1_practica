@@ -1,0 +1,1274 @@
+---
+title: "Insurance Analysis"
+author: 
+- Juan Manuel Jiménez
+- Javier Pinilla
+- Luis Rus
+date: "05/07/2020"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    code_folding: hide
+---
+
+
+
+# Objetivo del Proyecto
+
+El objetivo del proyecto es poder identificar que factores de los asegurados afectan en la siniestralidad de las aseguradoras de autos. 
+
+La siniestralidad afecta de lleno en la cuenta de resultados de la aseguradora y una buena comprensión de estos factores hará que la compañía pueda cuantificar bien el riesgo y por lo tanto el importe a cobrar al asegurado e incluso que pueda rechazar ciertos riesgos que no quiera asumir.
+
+Contamos con un dataset que contiene informacion sobre el tomador y el vehículo a asegurar. La variable objetivo es en este caso CLAIM FLAG, nos indica si ha tenido acciente o no.
+
+
+El dataset tiene 27 variables que vamos a explicar a continuación:
+
+**ID** - ID de poliza
+
+**KIDSDRIV** - Numero de adolescentes con licencia de conducir en la unidad familiar.
+
+**BIRTH** -	Año de nacimiento.
+
+**AGE** -	Edad.
+
+**HOMEKIDS** - Adolescentes viviendo en la casa de la unidad familiar.
+
+**YOJ** - Años en el trabajo.
+
+**INCOME** - Ingresos anuales.
+
+**PARENT1** - Flag de Familia uniparental.
+
+**HOME_VAL**- Valor de la vivienda.
+
+**MSTATUS**- Estado Civil (Soltero-Casado).
+
+**GENDER**- Sexo.
+
+**EDUCATION**- Nivel de educación.
+
+**OCCUPATION**-	Ocupacion.
+
+**TRAVTIME**- Tiempo diario en minutos al centro de trabajo.
+
+**CAR_USE**- Uso del vehiculo.
+
+**BLUEBOOK**- Valor actual del vehiculo.
+
+**TIF**- Tiempo en vigor en la compañía actual.
+
+**CAR_TYPE**- Tipo de vehiculo.
+
+**RED_CAR**- Flag Vehiculo de color Rojo.
+
+**OLDCLAIM**- Valor de los siniestros anteriores al año en curso.
+
+**CLM_FREQ**- Frecuencia de los siniestros anteriores al año en curso.
+
+**REVOKED**- Siniestro revocado por la compañia.
+
+**MVR_PTS**- Nº de puntos retirados del carnet.
+
+**CLM_AMT**- Cuantia del siniestro en el año en curso.
+
+**CAR_AGE**- Años del vehiculo.
+
+**CLAIM_FLAG**- Flag de siniestro año en curso.
+
+**URBANICITY**- Lugar de conduccion - Urbano vs. Rural
+
+Para poder realizar el proyecto vamos a necesitar las siguientes librerías. Algunas de estas librerías son específicas para el tratamiento de nulos, para la representación gráfica o para el desarrollo de modelos.
+
+
+```{r message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(egg)
+library(GGally)
+library(ISLR)
+library(car)
+library(DMwR2)
+library(faraway)
+library(mlbench)
+library(knitr)
+library(kableExtra)
+library(htmltools)
+library(bsplus)
+library(RColorBrewer)
+library(lattice)
+library(VIM)
+library(mice)
+library(stringr)
+library(corrplot)
+library(tidyverse)
+library(lsr)
+library(cowplot)
+library(tidymodels)
+library(skimr)
+library(tibble)
+library(lubridate)
+library(padr)
+library(caret)
+library(partykit)
+library(DMwR)
+library(lime)
+library(parsnip)
+library(randomForest)
+library(cluster)
+library(RColorBrewer)
+library(factoextra)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(Rtsne)
+library(pROC)
+library(ggpubr)
+library(ROCR)
+library(rpart)
+library(rpart.plot)
+library(e1071)
+library(leaps)
+library(MASS)
+library(Information)
+library(discretization)
+library(arules)
+library(scorecard)
+select <- dplyr::select
+library(flexclust)
+
+```
+
+# Carga y Limpieza de los datos.
+
+```{r}
+insurance <- read.csv(file="car_insurance_claim.csv", header=TRUE, sep=",")
+dim(insurance)
+```
+
+```{r}
+set.seed(101)
+sample <- sample.int(n = nrow(insurance), size = floor(.80*nrow(insurance)), replace = F)
+train_temp <- insurance[sample, ]
+test  <- insurance[-sample, ]
+# Validation
+sample_validation <- sample.int(n = nrow(train_temp), size = floor(.85*nrow(train_temp)), replace = F)
+train <- train_temp[sample_validation,]
+validation <- train_temp[-sample_validation,]
+
+# Contamos el numero de líneas para el análisis.
+n_train <- nrow(train)
+n_test <- nrow(test)
+n_validation <- nrow(validation)
+n_train
+n_test
+n_validation
+```
+
+
+## Transformaciones.
+
+### Variables cuantitativas
+
+```{r}
+# Cambiar "," por "." y eliminar los $
+train$INCOME <- str_replace_all(train$INCOME, ",", "")
+train$INCOME <- str_sub(train$INCOME, 2, -1)
+train$HOME_VAL <- str_replace_all(train$HOME_VAL, ",", "")
+train$HOME_VAL <- str_sub(train$HOME_VAL, 2, -1)
+train$BLUEBOOK <- str_replace_all(train$BLUEBOOK, ",", "")
+train$BLUEBOOK <- str_sub(train$BLUEBOOK, 2, -1)
+train$OLDCLAIM <- str_replace_all(train$OLDCLAIM, ",", "")
+train$OLDCLAIM <- str_sub(train$OLDCLAIM, 2, -1)
+train$CLM_AMT <- str_replace_all(train$CLM_AMT, ",", "")
+train$CLM_AMT <- str_sub(train$CLM_AMT, 2, -1)
+# Cambiar variables tipo "character" a "numeric"
+train$INCOME <- as.numeric(train$INCOME)
+train$HOME_VAL <- as.numeric(train$HOME_VAL)
+train$BLUEBOOK <- as.numeric(train$BLUEBOOK)
+train$OLDCLAIM <- as.numeric(train$OLDCLAIM)
+train$CLM_AMT <- as.numeric(train$CLM_AMT)
+```
+
+
+### Variables cualitativas
+
+
+```{r warning=FALSE}
+# Quitar prefijo z_
+train <- train %>% mutate_if(is.factor,funs(str_replace(.,"z_", "")))
+
+train$OCCUPATION <- factor(train$OCCUPATION,
+                          ordered = FALSE,
+                          levels = c("", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"),
+                          labels = c("Others", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"))
+
+# Pasar columnas tipo "character" a "factor"
+train <- train %>% mutate_if(is.character, as.factor)
+# Creamos una tabla con las variables y los valores que transformaremos con el valor 1
+variables_binarias <- data.frame(Variable = c("CAR_USE","MSTATUS","PARENT1","RED_CAR","REVOKED","GENDER","URBANICITY"),
+	valor_1 = c("Commercial","Yes","Yes","yes","Yes","M","Highly Urban/ Urban"),
+	stringsAsFactors=FALSE)
+for(i in 1:length(variables_binarias$Variable)){
+  var <- variables_binarias$Variable[i]
+  true_value <- variables_binarias$valor_1[i]
+  train[,var] <- ifelse(train[,var] == true_value,1,0)
+}
+```
+
+## Imputación de variables
+
+
+```{r, echo=FALSE, cache=TRUE, warning=FALSE, message=FALSE}
+# INCOME
+stoch_imp <- train %>% VIM::kNN(., variable=c("INCOME","BLUEBOOK"))
+d1 = train$INCOME
+train$INCOME <- stoch_imp$INCOME
+x <- data.frame(d1 = d1, d2 = stoch_imp$INCOME)
+data <- melt(x)
+ggplot(data,aes(x=value, fill=variable)) + geom_density(alpha=0.25) + labs(title = "INCOME")
+
+# CAR_AGE
+stoch_imp <- train %>% VIM::kNN(., variable=c("CAR_AGE", "INCOME","EDUCATION"))
+d1 = train$CAR_AGE
+train$CAR_AGE <- stoch_imp$CAR_AGE
+x <- data.frame(d1 = d1, d2 = stoch_imp$CAR_AGE)
+data <- melt(x)
+ggplot(data,aes(x=value, fill=variable)) + geom_density(alpha=0.25) + labs(title = "CAR AGE")
+train <- train[train$CAR_AGE > -1,]
+
+# YOJ
+stoch_imp <- train %>% VIM::kNN(., variable=c("INCOME","YOJ","EDUCATION", "HOMEKIDS", "AGE"))
+d1 = train$YOJ
+train$YOJ <- stoch_imp$YOJ
+x <- data.frame(d1 = d1, d2 = stoch_imp$YOJ)
+data <- melt(x)
+ggplot(data,aes(x=value, fill=variable)) + geom_density(alpha=0.25) + labs(title = "YOJ")
+
+# AGE
+train$BIRTH <- as.character(train$BIRTH)
+train <- train %>% mutate(AGE=ifelse(is.na(AGE), 120-as.numeric(substr(BIRTH, nchar(BIRTH)-1, nchar(BIRTH))), AGE))
+
+# HOME_VAL
+stoch_imp <- train %>%  VIM::kNN(., variable=c("INCOME","HOME_VAL"), k=1)
+train$INCOME <- stoch_imp$INCOME
+train$HOME_VAL <- stoch_imp$HOME_VAL
+```
+```{r echo=FALSE}
+train$EDUCATION <- factor(train$EDUCATION,
+                          ordered = TRUE,
+                          levels = c("<High School", "High School", "Bachelors", "Masters", "PhD"),
+                          labels = c("1-<High School", "2-High School", "3-Bachelors", "4-Masters", "PhD"))
+```
+
+```{r echo=FALSE}
+train$bin_OLDCLAIM <- ifelse(train$OLDCLAIM > 0,1,0)
+train$bin_HOMEKIDS <- ifelse(train$HOMEKIDS > 3,1,0)
+train["bin_KIDSDRIV"] <- ifelse(train["KIDSDRIV"] > 0,1,0)
+train["bin_TIF"] <- ifelse(train["TIF"] < 3 | train["TIF"] > 15 ,0,1)
+train["bin_AGE"] <- ifelse(train["AGE"] < 26 | train["AGE"] > 57 ,1,0)
+train["bin_MVR_PTS"] <- ifelse(train["MVR_PTS"] > 6,1,0)
+train["bin_OCCUPATION"] <- ifelse(train["OCCUPATION"] == "Lawyer" | train["OCCUPATION"] == "Manager"| train["OCCUPATION"] == "Doctor" ,0,1)
+train["bin_EDUCATION"] <- ifelse(train["EDUCATION"] == "1-<High School" | train["EDUCATION"] == "2-High School",1,0)
+train["bin_CAR_TYPE"] <- ifelse(train["CAR_TYPE"] == "Minivan",0,1)
+# Variables logarítmicas
+train$CLM_AMT_log <- log(train$CLM_AMT,10)
+train$INCOME_log <- log(train$INCOME+1,10)
+train$BLUEBOOK_log <- log(train$BLUEBOOK,10)
+train$OLDCLAIM_log <- log(train$OLDCLAIM+1,10)
+```
+
+
+
+
+## Modificacion Subset Test.
+
+Finalmente modificamos el subset de test con los mismos cambios que el de train.
+
+```{r echo=FALSE}
+# Cambiar "," por "." y eliminar los $
+test$INCOME <- str_replace_all(test$INCOME, ",", "")
+test$INCOME <- str_sub(test$INCOME, 2, -1)
+test$HOME_VAL <- str_replace_all(test$HOME_VAL, ",", "")
+test$HOME_VAL <- str_sub(test$HOME_VAL, 2, -1)
+test$BLUEBOOK <- str_replace_all(test$BLUEBOOK, ",", "")
+test$BLUEBOOK <- str_sub(test$BLUEBOOK, 2, -1)
+test$OLDCLAIM <- str_replace_all(test$OLDCLAIM, ",", "")
+test$OLDCLAIM <- str_sub(test$OLDCLAIM, 2, -1)
+test$CLM_AMT <- str_replace_all(test$CLM_AMT, ",", "")
+test$CLM_AMT <- str_sub(test$CLM_AMT, 2, -1)
+# Cambiar variables tipo "character" a "numeric"
+test$INCOME <- as.numeric(test$INCOME)
+test$HOME_VAL <- as.numeric(test$HOME_VAL)
+test$BLUEBOOK <- as.numeric(test$BLUEBOOK)
+test$OLDCLAIM <- as.numeric(test$OLDCLAIM)
+test$CLM_AMT <- as.numeric(test$CLM_AMT)
+# Quitar prefijo z_
+test <- test %>% mutate_if(is.factor,funs(str_replace(.,"z_", "")))
+# Renombrado labels variable OCCUPATION
+test$OCCUPATION <- factor(test$OCCUPATION,
+                          ordered = FALSE,
+                          levels = c("", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"),
+                          labels = c("Others", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"))
+test$EDUCATION <- factor(test$EDUCATION,
+                          ordered = TRUE,
+                          levels = c("<High School", "High School", "Bachelors", "Masters", "PhD"),
+                          labels = c("1-<High School", "2-High School", "3-Bachelors", "4-Masters", "PhD"))
+```
+
+
+
+```{r echo=FALSE}
+# Pasar columnas tipo "character" a "factor"
+test <- test %>% mutate_if(is.character, as.factor)
+# Creamos una tabla con las variables y los valores que transformaremos con el valor 1
+for(i in 1:length(variables_binarias$Variable)){
+  var <- variables_binarias$Variable[i]
+  true_value <- variables_binarias$valor_1[i]
+  test[,var] <- ifelse(test[,var] == true_value,1,0)
+}
+# Imputación de datos faltantes
+train_knn_imp <- train %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
+test_knn_imp <- test %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
+train_knn_imp$isTrain <- rep(1, nrow(train_knn_imp))
+test_knn_imp$isTrain <- rep(0, nrow(test_knn_imp))
+train_test_knn_imp <- rbind(train_knn_imp,test_knn_imp)
+```
+
+```{r echo=FALSE}
+# Imputado de missings varible INCOME
+knn_income_imp <- train_test_knn_imp %>% VIM::kNN(., variable=c("INCOME","BLUEBOOK")) %>% filter(isTrain==0)
+test$INCOME <- knn_income_imp$INCOME
+# Imputado de missings varible CAR_AGE
+knn_carage_imp <- train_test_knn_imp %>% VIM::kNN(., variable=c("CAR_AGE", "INCOME","EDUCATION")) %>%   filter(isTrain==0)
+test$CAR_AGE <- knn_carage_imp$CAR_AGE
+# Imputado de missings varible YOJ
+knn_yoj_imp <- train_test_knn_imp %>% VIM::kNN(., variable=c("INCOME","YOJ","EDUCATION", "HOMEKIDS", "AGE")) %>% filter(isTrain==0)
+test$YOJ <- knn_yoj_imp$YOJ
+# Imputado de missings variable AGE
+test$BIRTH <- as.character(test$BIRTH)
+test <- test %>% mutate(AGE=ifelse(is.na(AGE), 120-as.numeric(substr(BIRTH, nchar(BIRTH)-1, nchar(BIRTH))), AGE))
+
+test$bin_OLDCLAIM <- ifelse(test$OLDCLAIM > 0,1,0)
+test$bin_HOMEKIDS <- ifelse(test$HOMEKIDS > 3,1,0)
+test["bin_KIDSDRIV"] <- ifelse(test["KIDSDRIV"] > 0,1,0)
+test["bin_TIF"] <- ifelse(test["TIF"] < 3 | test["TIF"] > 15 ,0,1)
+test["bin_AGE"] <- ifelse(test["AGE"] < 26 | test["AGE"] > 57 ,1,0)
+test["bin_MVR_PTS"] <- ifelse(test["MVR_PTS"] > 6,1,0)
+test["bin_OCCUPATION"] <- ifelse(test["OCCUPATION"] == "Lawyer" | test["OCCUPATION"] == "Manager"| test["OCCUPATION"] == "Doctor" ,0,1)
+test["bin_EDUCATION"] <- ifelse(test["EDUCATION"] == "1-<High School" | test["EDUCATION"] == "2-High School",1,0)
+test["bin_CAR_TYPE"] <- ifelse(test["CAR_TYPE"] == "Minivan",0,1)
+# Variables logarítmicas
+test$CLM_AMT_log <- log(test$CLM_AMT,10)
+test$INCOME_log <- log(test$INCOME+1,10)
+test$BLUEBOOK_log <- log(test$BLUEBOOK,10)
+test$OLDCLAIM_log <- log(test$OLDCLAIM+1,10)
+```
+
+## Modificaciones Subset de validation
+
+```{r results = "hide"}
+# MODIFICACIONES PARA EL SUBSET DE VALIDATION
+# Cambiar "," por "." y eliminar los $
+validation$INCOME <- str_replace_all(validation$INCOME, ",", "")
+validation$INCOME <- str_sub(validation$INCOME, 2, -1)
+
+validation$HOME_VAL <- str_replace_all(validation$HOME_VAL, ",", "")
+validation$HOME_VAL <- str_sub(validation$HOME_VAL, 2, -1)
+
+validation$BLUEBOOK <- str_replace_all(validation$BLUEBOOK, ",", "")
+validation$BLUEBOOK <- str_sub(validation$BLUEBOOK, 2, -1)
+
+validation$OLDCLAIM <- str_replace_all(validation$OLDCLAIM, ",", "")
+validation$OLDCLAIM <- str_sub(validation$OLDCLAIM, 2, -1)
+
+validation$CLM_AMT <- str_replace_all(validation$CLM_AMT, ",", "")
+validation$CLM_AMT <- str_sub(validation$CLM_AMT, 2, -1)
+
+# Cambiar variables tipo "character" a "numeric"
+validation$INCOME <- as.numeric(validation$INCOME)
+
+validation$HOME_VAL <- as.numeric(validation$HOME_VAL)
+
+validation$BLUEBOOK <- as.numeric(validation$BLUEBOOK)
+
+validation$OLDCLAIM <- as.numeric(validation$OLDCLAIM)
+
+validation$CLM_AMT <- as.numeric(validation$CLM_AMT)
+
+# Quitar prefijo z_
+validation <- validation %>% mutate_if(is.factor,funs(str_replace(.,"z_", "")))
+
+# Renombrado labels variable OCCUPATION
+validation$OCCUPATION <- factor(validation$OCCUPATION,
+                          ordered = FALSE,
+                          levels = c("", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"),
+                          labels = c("Others", "Clerical", "Doctor", "Home Maker", "Lawyer", "Manager", "Professional", "Student", "Blue Collar"))
+validation$EDUCATION <- factor(validation$EDUCATION,
+                          ordered = TRUE,
+                          levels = c("<High School", "High School", "Bachelors", "Masters", "PhD"),
+                          labels = c("1-<High School", "2-High School", "3-Bachelors", "4-Masters", "PhD"))
+
+# Pasar columnas tipo "character" a "factor"
+validation <- validation %>% mutate_if(is.character, as.factor)
+
+# Creamos una tabla con las variables y los valores que transformaremos con el valor 1
+for(i in 1:length(variables_binarias$Variable)){
+  var <- variables_binarias$Variable[i]
+  true_value <- variables_binarias$valor_1[i]
+  validation[,var] <- ifelse(validation[,var] == true_value,1,0)
+}
+
+# Imputación de datos faltantes
+
+train_knn_imp <- train %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
+validation_knn_imp <- validation %>% select(INCOME, BLUEBOOK, CAR_AGE, EDUCATION, YOJ, HOMEKIDS, AGE)
+
+train_knn_imp$isTrain <- rep(1, nrow(train_knn_imp))
+validation_knn_imp$isTrain <- rep(0, nrow(validation_knn_imp))
+train_validation_knn_imp <- rbind(train_knn_imp,validation_knn_imp)
+sapply(validation, function(x) sum(is.na(x)))
+
+# Imputado de missings varible INCOME
+knn_income_imp <- train_validation_knn_imp %>% VIM::kNN(., variable=c("INCOME","BLUEBOOK")) %>% filter(isTrain==0)
+validation$INCOME <- knn_income_imp$INCOME
+
+# Imputado de missings varible CAR_AGE
+knn_carage_imp <- train_validation_knn_imp %>% VIM::kNN(., variable=c("CAR_AGE", "INCOME","EDUCATION")) %>%   filter(isTrain==0)
+validation$CAR_AGE <- knn_carage_imp$CAR_AGE
+
+# Imputado de missings varible YOJ
+knn_yoj_imp <- train_validation_knn_imp %>% VIM::kNN(., variable=c("INCOME","YOJ","EDUCATION", "HOMEKIDS", "AGE")) %>% filter(isTrain==0)
+validation$YOJ <- knn_yoj_imp$YOJ
+
+# Imputado de missings variable AGE
+validation$BIRTH <- as.character(validation$BIRTH)
+validation <- validation %>% mutate(AGE=ifelse(is.na(AGE), 120-as.numeric(substr(BIRTH, nchar(BIRTH)-1, nchar(BIRTH))), AGE))
+sapply(validation, function(x) sum(is.na(x)))
+
+validation["education_bin"] <- ifelse(validation["EDUCATION"] == "1-<High School" | validation["EDUCATION"] == "2-High School",1,0)
+validation_target <- validation
+validation_target$CLM_AMT_log <- log(validation$CLM_AMT,10)
+validation_target$BLUEBOOK_log <- log(validation$BLUEBOOK,10)
+validation_target$OLDCLAIM_log <- log(validation$OLDCLAIM+1,10)
+```
+
+# Modelos para la predicción de la variable CLAIM FLAG
+
+Como comentabamos en el apartado anterior vamos a aplicar los modelos de clasificación tanto supervisados como no supervisados.
+
+Primero vamos a preparar la BBDD para realizar los cálculos seleccionando las variables y dando labels a la variable objetivo de NOacc y SIacc dependiendo de si es 0 o 1.
+
+Para el calculo de modelos basados en distancias hacemos las variables numericas mientras que para el resto de modelos dejamos las variables con su formato haciendo la variable objetivo un factor.
+
+```{r echo=FALSE}
+df_train <- train %>% select("OLDCLAIM", "HOMEKIDS", "KIDSDRIV","TIF","AGE","MVR_PTS",
+"OCCUPATION","EDUCATION","CAR_TYPE","CLAIM_FLAG", "YOJ","PARENT1","GENDER", "TRAVTIME","CAR_USE","RED_CAR","CLM_FREQ", "URBANICITY", "BLUEBOOK",)
+
+train_kmeans <- df_train %>% mutate_if(is.factor,as.numeric) %>% mutate_if(is.integer,as.numeric)
+
+
+
+#df_train = df_train %>%
+#  mutate(CLAIM_FLAG = ifelse( CLAIM_FLAG == 'SIacc', 1, 0 )
+#          , CLAIM_FLAG = as.factor(CLAIM_FLAG) )
+```
+
+```{r echo=FALSE}
+
+df_test <- test %>% select("OLDCLAIM", "HOMEKIDS", "KIDSDRIV","TIF","AGE","MVR_PTS","OCCUPATION","EDUCATION","CAR_TYPE","CLAIM_FLAG", "YOJ","PARENT1","GENDER", "TRAVTIME","CAR_USE","RED_CAR","CLM_FREQ", "URBANICITY", "BLUEBOOK",)
+
+test_kmeans <- df_test %>% mutate_if(is.factor,as.numeric) %>% mutate_if(is.integer,as.numeric)
+
+test_WOE <- test %>% select("OLDCLAIM","AGE","MVR_PTS","OCCUPATION","EDUCATION","CAR_TYPE","CLAIM_FLAG","CLM_FREQ", "URBANICITY", "BLUEBOOK","PARENT1", "CAR_USE")
+
+#df_train$CLAIM_FLAG <- factor(df_train$CLAIM_FLAG, levels = c("0", "1"), labels = c("NOacc", "SIacc"))
+```
+
+```{r echo=FALSE}
+
+df_validation <- validation %>% select("OLDCLAIM", "HOMEKIDS", "KIDSDRIV","TIF","AGE","MVR_PTS","OCCUPATION","EDUCATION","CAR_TYPE","CLAIM_FLAG", "YOJ","PARENT1","GENDER", "TRAVTIME","CAR_USE","RED_CAR","CLM_FREQ", "URBANICITY", "BLUEBOOK",)
+
+validation_kmeans <- df_validation %>% mutate_if(is.factor,as.numeric) %>% mutate_if(is.integer,as.numeric)
+
+validation_WOE <- validation %>% select("OLDCLAIM","AGE","MVR_PTS","OCCUPATION","EDUCATION","CAR_TYPE","CLAIM_FLAG","CLM_FREQ", "URBANICITY", "BLUEBOOK","PARENT1", "CAR_USE")
+
+
+#df_train$CLAIM_FLAG <- factor(df_train$CLAIM_FLAG, levels = c("0", "1"), labels = c("NOacc", "SIacc"))
+```
+
+
+Modelo IV
+
+```{r echo=FALSE}
+
+iv = iv(df_train, y = 'CLAIM_FLAG') %>%
+  as_tibble() %>%
+  mutate( info_value = round(info_value, 3) ) %>%
+  arrange( desc(info_value) )%>% 
+  filter(info_value >= 0.4)%>% 
+  filter(info_value < 0.55)
+
+iv %>%
+  knitr::kable()
+```
+```{r echo=FALSE}
+bins <- woebin(df_train %>% select(iv$variable, CLAIM_FLAG), y = "CLAIM_FLAG",  positive = "1")
+```
+```{r echo=FALSE}
+#df_train_woe <- woebin_ply(df_train %>% select(iv$variable, CLAIM_FLAG, TIF, "HOMEKIDS", #"KIDSDRIV","TIF","MVR_PTS", "YOJ","PARENT1","GENDER", "TRAVTIME","CAR_USE","RED_CAR"), bins = bins)
+
+df_train_woe <- woebin_ply(df_train %>% select(iv$variable, CLAIM_FLAG), bins = bins)
+df_test_woe <- woebin_ply(df_test %>% select(iv$variable, CLAIM_FLAG), bins = bins)
+df_validation_woe <- woebin_ply(df_validation %>% select(iv$variable, CLAIM_FLAG), bins = bins)
+
+df_train_woe <- df_train_woe
+train_kmeans <- df_train_woe
+df_test_woe <- df_test_woe
+test_kmeans <- df_test_woe
+
+bins$TIF %>%
+  knitr::kable()
+
+bins$GENDER %>%
+  knitr::kable()
+
+bins$URBANICITY %>%
+  knitr::kable()
+
+```
+
+
+
+## Modelo no supervisado
+
+Con los modelos no supervisados vamos a intentar clasificar por grupos los registros para cuando lleguen nuevos registros poder imputarlos a un grupo de los seleccionados.
+
+Con este metodo podemos ver si en los distintos cluster tenemos distintas probabilidades de siniestro y de esa manera podríamos tener distintas tarifas dependiendo del grupo en el que cayeran los nuevos registros.
+
+### Modelo no supervisado KMEANS
+
+
+Este modelo esta basado en la minimización de la suma de distancias entre cada objeto y el centroide de su grupo o cluster.
+
+Al ser un modelo de distancias es necesario escalar todas las variables. Para ello utilizamos la sentencia Scale.
+
+Al aplicar esto aparecen ciertos valores sin sentido como edades negativas pero no tiene importancia ya que unicamente vamos a ver distancias.
+
+
+```{r echo=FALSE}
+xiris <- scale(select(df_train_woe, - CLAIM_FLAG))
+```
+
+Primero vamos a buscar el punto optimo de cluster en funcion del minimo error.
+ 
+ Vemos en la figura que la pendiente varía levemente entre diferentes numero de cluster y a partir de 5 no varía sustancialmente por lo que elegiremos 5 como numero de centroides. 
+ 
+```{r echo=FALSE, message=FALSE, warning=FALSE, cache=TRUE}
+# Initialize total within sum of squares error: wss
+wss <- 0
+wsr <- 0
+set.seed(342)
+# For 1 to 15 cluster centers
+for (i in 1:10) {
+  km.out <- kmeans(xiris, centers = i, nstart = 20)
+  # Save total within sum of squares to wss variable
+  wss[i] <- km.out$tot.withinss
+  wsr[i] <- km.out$betweenss
+}
+
+# Plot total within sum of squares vs. number of clusters
+plot(1:10, wss, type = "b", 
+     xlab = "Número de Clusters", 
+     ylab = "Suma de cuadrados DENTRO DE grupos")
+
+plot(1:10, wsr, type = "b", 
+     xlab = "Número de Clusters", 
+     ylab = "suma Cuadrados ENTRE grupos")
+
+```
+Estas caracteristicas de kmeans nos da una idea de la calidad de nuestro modelo. Cuanto menor sea la suma de cuadrados dentro de los grupos y mayor sea entre los grupos mejor será el modelo.
+
+```{r echo=FALSE}
+print("Los registros para cada cluster son los siguientes:")
+km.out$size
+print("La suma de cuadrados total es")
+km.out$totss
+print("La suma de cuadrados entre grupos es")
+km.out$betweenss
+print("La suma de cuadrados dentro del grupos es")
+km.out$withinss
+print("La suma de cuadrados agrupada de las medidas dentro del grupos es")
+km.out$tot.withinss
+print("La Varianza explicada con cinco clusters es")
+(km.out$betweenss/km.out$totss) * 100
+```
+
+
+Posteriormente al elegir el numero de centroides vamos a ejecutar el modelo y ver las medias de cada variable en cada Cluster y de este modo poder ver si hay diferencias en la siniestralidad (Variable CLAIM FLAG)
+
+```{r echo=FALSE, cache=TRUE}
+
+```
+
+Lo que podemos ver que en los diferentes cluster es que tenemos 3 medias diferenciadas en los 5 cluster de la variable CLAIM_FLAG.
+
+Podriamos decir que tenemos un cluster sin siniestralidad, otros dos con una siniestralidad de un 26% y otros dos con una siniestralidad del 50%.
+
+Si nos fijamos en el numero de registros por cluster un 60% esta en la tarifa del 26% mientras que el otro 40% estaría repartido en 20% buenos y 20% malos conductores.
+
+
+```{r cache=TRUE}
+set.seed(342)
+km <- kmeans(xiris, 2, nstart = 1)
+aggregate(df_train_woe, by=list(km$cluster), mean)
+
+
+#plot(train_kmeans$AGE, train_kmeans$CLAIM_FLAG, col=km$cluster, xlab="age", ylab="claim_flag")
+table(km$cluster, df_train_woe$CLAIM_FLAG)
+
+xiris.test <- scale(select(df_test_woe, - CLAIM_FLAG))
+xiris.validation <- scale(select(df_validation_woe, - CLAIM_FLAG))
+
+predict.kmeans <- function(object, newdata){
+    centers <- object$centers
+    n_centers <- nrow(centers)
+    dist_mat <- as.matrix(dist(rbind(centers, newdata)))
+    dist_mat <- dist_mat[-seq(n_centers), seq(n_centers)]
+    max.col(-dist_mat)
+}
+
+
+
+
+km.test <- predict(km, xiris.test)
+km.validation <- predict(km, xiris.validation)
+
+table_train <- prop.table(table(km$cluster, train_kmeans$CLAIM_FLAG), margin = 1) %>% round(digits=2)
+colnames(table_train) <- c("0.train", "1.train")
+table_train
+
+table_test <- prop.table(table(km.test, test_kmeans$CLAIM_FLAG), margin = 1) %>% round(digits=2)
+colnames(table_test) <- c("0.test", "1.test")
+table_test
+
+table_validation <- prop.table(table(km.validation, validation_kmeans$CLAIM_FLAG), margin = 1) %>% round(digits=2)
+colnames(table_validation) <- c("0.val", "1.val")
+table_validation
+```
+
+
+### Modelo no supervisado HIERARCHICAL CLUSTERING.
+
+```{r echo=FALSE, cache=TRUE}
+clusters <- hclust(dist(df_train_woe))
+plot(clusters)
+```
+Como podemos ver en el dendograma una división apropiada podría ser 6.
+
+```{r echo=FALSE, cache=TRUE}
+clusterCut <- cutree(clusters, 5)
+prop.table(table(clusterCut, train_kmeans$CLAIM_FLAG)) %>% round(digits=2)
+```
+ 
+ Como vemos los clusters creados por el metodo de hierarchical clustering no nos dan una diferenciación clara en base a la siniestralidad de la cartera
+
+```{r echo=FALSE}
+
+df_train <- df_train_woe
+df_test <- df_test_woe
+df_validation <- df_validation_woe
+
+df_train$CLAIM_FLAG <- factor(df_train$CLAIM_FLAG, levels = c("0", "1"), labels = c("NOacc", "SIacc"))
+
+df_test$CLAIM_FLAG <- factor(df_test$CLAIM_FLAG, levels = c("0", "1"), labels = c("NOacc", "SIacc"))
+
+df_validation$CLAIM_FLAG <- factor(df_validation$CLAIM_FLAG, levels = c("0", "1"), labels = c("NOacc", "SIacc"))
+
+
+#df_train_woe$CLAIM_FLAG <- factor(df_train_woe$CLAIM_FLAG, levels = c("0", "1"), labels = c("NOacc", "SIacc"))
+
+#df_test_woe$CLAIM_FLAG <- factor(df_test_woe$CLAIM_FLAG, levels = c("0", "1"), labels = c("NOacc", "SIacc"))
+
+str(df_train)
+```
+ 
+## Reduccion de la dimensionalidad.
+
+### PCA
+
+Principal Component Analysis (PCA) es un método estadístico que permite simplificar la complejidad de espacios muestrales con muchas dimensiones a la vez que conserva su información.
+
+El primer paso que vamos a dar va a ser generar los componentes principales y ver la desviacion estandar, la proporcion de la varianza y la proporcion acumulativa.
+
+Vemos que con 6 componentes principales explicamos el 50% de la varianza
+
+
+```{r echo=FALSE, cache=TRUE}
+pca_train <- prcomp(x = train_kmeans, scale = T, center = T)
+summary(pca_train)
+names(pca_train)
+```
+```{r echo=FALSE, results='hide'}
+pca_train
+```
+```{r echo=FALSE, results='hide'}
+pca_train$center
+```
+
+```{r echo=FALSE, results='hide'}
+pca_train$scale
+```
+
+
+```{r echo=FALSE}
+biplot(pca_train)
+```
+```{r echo=FALSE, warning=FALSE}
+#Getting proportion of variance for a scree plot
+pr.var <- pca_train$sdev^2
+pve <- pr.var / sum(pr.var)
+
+# Plot variance explained for each principal component
+plot(pve, 
+     xlab = "Principal Component",
+     ylab = "Proportion of Variance Explained",
+     ylim = c(0,0.15), 
+     type = "b")
+
+pve
+```
+
+Aqui podemos ver que el primer componente principal explica un 13% de la varianza y poco a poco va disminuyendo lo que nos da que pensar que no se va a poder hacer una reducción apropiada de la dimensionalidad.
+
+
+```{r echo=FALSE, warning=FALSE}
+# Plot cumulative proportion of variance explained
+plot(cumsum(pve), xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained",
+     ylim = c(0, 1), type = "b")
+cumsum(pve)
+```
+
+Tras el analisis de PCA vemos que para que superemos el 80% de explicabilidad necesitamos 13 componentes y para superar el 90% 15.
+
+### TSNE
+
+Otra de las tecnicas de reducción de la dimensionalidad es stochastic neighbor embedding (tSNE) la cual convierte las distancias euclídeas multidimensionales entre pares de observaciones en probabilidades condicionales.
+
+La ventaja con respecto a PCA es que recoge combinaciones no lineales entre las variables originales.
+
+Utilizamos una perplexity de 30 que nos representa la importancia que le damos a los vecinos.
+
+```{r echo=FALSE, cache=TRUE}
+colors = rainbow(length(unique(train$label)))
+names(colors) = unique(train$label)
+
+## Executing the algorithm on curated data
+tsne <- Rtsne(train_kmeans, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500, check_duplicates = FALSE)
+# exeTimeTsne<- system.time(Rtsne(train_kmeans, dims = 2, perplexity=30, verbose=TRUE, max_iter = 500))
+
+resultados <- as.data.frame(tsne$Y)
+colnames(resultados) <- c("dim_1", "dim_2")
+resultados$numero <- as.character(train_kmeans$CLAIM_FLAG)
+ggplot(data = resultados, aes(x = dim_1, y = dim_2)) +
+  geom_point(aes(color = numero)) + 
+  theme_bw()
+
+```
+```{r echo=FALSE}
+resultados <- as.data.frame(pca_train$x[, 1:2])
+resultados$numero <- as.character(train_kmeans$CLAIM_FLAG)
+ggplot(data = resultados, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = numero)) + 
+  theme_bw()
+```
+
+En este escenario, el método tSNE consigue que, al reducir la dimensionalidad, la separación entre observaciones sea sustancialmente mejor que cuando se emplea PCA.
+
+Véase ahora la reducción a un espacio de 3 dimensiones.
+
+```{r echo=FALSE, cache=TRUE, warning=FALSE}
+library(scatterplot3d)
+library(RColorBrewer)
+tsne <- Rtsne(X = train_kmeans, is_distance = FALSE, dims = 3, perplexity = 30,
+              theta = 0.5, max_iter = 500, check_duplicates = FALSE)
+
+resultados <- as.data.frame(tsne$Y)
+colnames(resultados) <- c("dim_1", "dim_2", "dim_3")
+resultados$numero <- as.factor(train_kmeans$CLAIM_FLAG)
+
+colores <- brewer.pal(n = 2, name = "Set3")
+colores <- colores[as.numeric(resultados$numero)]
+scatterplot3d(x = resultados$dim_1,
+              y = resultados$dim_2,
+              z = resultados$dim_3,
+              pch = 20, color = colores, cex.lab = 0.8,
+              grid = TRUE, box = FALSE)
+legend("bottom", legend = levels(resultados$numero),
+      col = colores, pch = 16, 
+      inset = -0.23, xpd = TRUE, horiz = TRUE)
+```
+
+
+## Modelo Supervisado
+
+Ahora empezamos con modelos supervisados de clasificación. Estos modelos tienen en cuenta la variable objetivo que en nuestro caso es CLAIM_FLAG.
+
+Vamos a probar el random forest, GLM, KNN, Decision Tree y SVM
+
+Para ello vamos a entrenar a la par que calculamos los mejores hiperparametros para cada modelo.
+
+## Hiperparametros de cada modelo
+
+### Hiperparametros de GLM
+
+```{r echo=FALSE}
+regsubsets.out <-
+    regsubsets(CLAIM_FLAG ~. ,
+               data = df_train,
+               nbest = 1,       # 1 best model for each number of predictors
+               nvmax = NULL,    # NULL for no limit on number of variables
+               force.in = NULL, force.out = NULL,
+               method = "exhaustive")
+regsubsets.out
+```
+```{r echo=FALSE}
+summary.out <- summary(regsubsets.out)
+as.data.frame(summary.out$outmat)
+```
+```{r echo=FALSE}
+plot(regsubsets.out, scale = "adjr2", main = "Adjusted R^2")
+```
+
+```{r echo=FALSE, cache=TRUE, warning=FALSE}
+# HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
+#===============================================================================
+library(doParallel)
+cl <- makeCluster(4)
+registerDoParallel(cl)
+
+particiones  <- 5
+repeticiones <- 5
+
+# Hiperparámetros
+hiperparametros <- data.frame(parameter = "none")
+
+set.seed(342)
+seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
+for (i in 1:(particiones * repeticiones)) {
+  seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
+}
+seeds[[(particiones * repeticiones) + 1]] <- sample.int(1000, 1)
+
+# DEFINICIÓN DEL ENTRENAMIENTO
+#===============================================================================
+control_train <- trainControl(method = "repeatedcv", number = particiones,
+                              repeats = repeticiones, seeds = seeds,
+                              returnResamp = "final", verboseIter = FALSE,
+                              allowParallel = TRUE)
+
+# AJUSTE DEL MODELO
+# ==============================================================================
+set.seed(342)
+modelo_logistic <- train(CLAIM_FLAG ~ ., data = df_train,
+                         method = "glm",
+                         tuneGrid = hiperparametros,
+                         metric = "Accuracy",
+                         trControl = control_train,
+                         family = "binomial")
+modelo_logistic
+```
+
+
+### Hiperparametros de KNN
+
+```{r echo=FALSE, cache=TRUE}
+particiones  <- 5
+repeticiones <- 5
+
+# Hiperparámetros
+hiperparametros <- data.frame(k = c(5, 10 ,30, 50, 100, 200))
+
+set.seed(342)
+seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
+for (i in 1:(particiones * repeticiones)) {
+  seeds[[i]] <- sample.int(1000, nrow(hiperparametros)) 
+}
+seeds[[(particiones * repeticiones) + 1]] <- sample.int(1000, 1)
+
+# DEFINICIÓN DEL ENTRENAMIENTO
+#===============================================================================
+control_train <- trainControl(method = "repeatedcv", number = particiones,
+                              repeats = repeticiones, seeds = seeds,
+                              returnResamp = "final", verboseIter = FALSE,
+                              allowParallel = TRUE)
+
+# AJUSTE DEL MODELO
+# ==============================================================================
+set.seed(342)
+modelo_knn <- train(CLAIM_FLAG ~ ., data = df_train,
+                    method = "knn",
+                    tuneGrid = hiperparametros,
+                    metric = "Accuracy",
+                    trControl = control_train)
+modelo_knn
+```
+
+```{r echo=FALSE}
+plot(modelo_knn)
+```
+
+### Hiperparametros de Decision Tree
+
+```{r echo=FALSE, cache=TRUE}
+# HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
+#===============================================================================
+particiones  <- 5
+repeticiones <- 5
+
+# Hiperparámetros
+#hiperparametros <- data.frame(parameter = "none")
+hiperparametros <- data.frame(cp = c(0.01, 0.011, 0.012, 0.013, 0.014, 0.015, 0.016, 0.017, 0.018, 0.019))
+set.seed(342)
+seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
+for (i in 1:(particiones * repeticiones)) {
+  seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
+}
+seeds[[(particiones * repeticiones) + 1]] <- sample.int(1000, 1)
+
+# DEFINICIÓN DEL ENTRENAMIENTO
+#===============================================================================
+control_train <- trainControl(method = "repeatedcv", number = particiones,
+                              repeats = repeticiones, seeds = seeds,
+                              returnResamp = "final", verboseIter = FALSE,
+                              allowParallel = TRUE)
+
+
+# AJUSTE DEL MODELO
+# ==============================================================================
+set.seed(342)
+modelo_C50Tree <- train(CLAIM_FLAG ~ ., data = df_train,
+                    method = "rpart",
+                    tuneGrid = hiperparametros,
+                    metric = "Accuracy",
+                    trControl = control_train)
+modelo_C50Tree
+```
+
+```{r echo=FALSE}
+plot(modelo_C50Tree)
+```
+
+### Hiperparametros de Random Forest
+
+```{r echo=FALSE, cache=TRUE}
+# HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
+#===============================================================================
+particiones  <- 5
+repeticiones <- 5
+
+# Hiperparámetros
+hiperparametros <- expand.grid(mtry = c(4,8,10),
+                               min.node.size = c(15, 20, 30),
+                               splitrule = "gini")
+
+set.seed(342)
+seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
+for (i in 1:(particiones * repeticiones)) {
+  seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
+}
+seeds[[(particiones * repeticiones) + 1]] <- sample.int(1000, 1)
+
+# DEFINICIÓN DEL ENTRENAMIENTO
+#===============================================================================
+control_train <- trainControl(method = "repeatedcv", number = particiones,
+                              repeats = repeticiones, seeds = seeds,
+                              returnResamp = "final", verboseIter = FALSE,
+                              allowParallel = TRUE)
+
+# AJUSTE DEL MODELO
+# ==============================================================================
+set.seed(342)
+modelo_rf <- train(CLAIM_FLAG ~ ., data = df_train,
+                   method = "ranger",
+                   tuneGrid = hiperparametros,
+                   metric = "Accuracy",
+                   trControl = control_train,
+                   # Número de árboles ajustados
+                   num.trees = 500)
+modelo_rf
+```
+
+```{r echo=FALSE}
+plot(modelo_rf)
+```
+
+### Hiperparametros de SVM
+
+```{r echo=FALSE, cache=TRUE}
+# HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
+#===============================================================================
+particiones  <- 5
+repeticiones <- 5
+
+
+# Hiperparámetros
+hiperparametros <- expand.grid(sigma = c(0.001, 0.01),
+                               C = c(100, 200))
+
+set.seed(342)
+seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
+for (i in 1:(particiones * repeticiones)) {
+  seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
+}
+seeds[[(particiones * repeticiones) + 1]] <- sample.int(1000, 1)
+
+# DEFINICIÓN DEL ENTRENAMIENTO
+#===============================================================================
+control_train <- trainControl(method = "repeatedcv", number = particiones,
+                              repeats = repeticiones, seeds = seeds,
+                              returnResamp = "final", verboseIter = FALSE,
+                              allowParallel = TRUE)
+
+# AJUSTE DEL MODELO
+# ==============================================================================
+set.seed(342)
+modelo_svmrad <- train(CLAIM_FLAG ~ ., data = df_train,
+                   method = "svmRadial",
+                   tuneGrid = hiperparametros,
+                   metric = "Accuracy",
+                   trControl = control_train)
+modelo_svmrad
+```
+
+```{r echo=FALSE}
+plot(modelo_svmrad)
+```
+
+### Hiperparametros de Redes Bayesianas
+
+```{r echo=FALSE}
+# PARALELIZACIÓN DE PROCESO
+#===============================================================================
+#library(doMC)
+#registerDoMC(cores = 4)
+
+# HIPERPARÁMETROS, NÚMERO DE REPETICIONES Y SEMILLAS PARA CADA REPETICIÓN
+#===============================================================================
+particiones  <- 5
+repeticiones <- 5
+
+# Hiperparámetros
+hiperparametros <- data.frame(usekernel = FALSE, fL = 0 , adjust = 0)
+
+set.seed(123)
+seeds <- vector(mode = "list", length = (particiones * repeticiones) + 1)
+for (i in 1:(particiones * repeticiones)) {
+  seeds[[i]] <- sample.int(1000, nrow(hiperparametros))
+}
+seeds[[(particiones * repeticiones) + 1]] <- sample.int(1000, 1)
+
+# DEFINICIÓN DEL ENTRENAMIENTO
+#===============================================================================
+control_train <- trainControl(method = "repeatedcv", number = particiones,
+                              repeats = repeticiones, seeds = seeds,
+                              returnResamp = "final", verboseIter = FALSE,
+                              allowParallel = TRUE)
+
+# AJUSTE DEL MODELO
+# ==============================================================================
+set.seed(342)
+modelo_nb <- train(CLAIM_FLAG ~ ., data = df_train,
+                   method = "nb",
+                   tuneGrid = hiperparametros,
+                   metric = "Accuracy",
+                   trControl = control_train)
+modelo_nb
+```
+
+### Comparativa de modelos
+
+Primero vamos a analizar las medias de las valores que nos ha dado nuestro lanzamiento en train para el resultado que ha sido definitivamente el que mas accuracy tenia en cada modelo.
+
+```{r echo=FALSE, cache=TRUE}
+modelos <- list(KNN = modelo_knn, logistic = modelo_logistic,
+                arbol = modelo_C50Tree, rf = modelo_rf, SVMRadial = modelo_svmrad, NB = modelo_nb)
+
+resultados_resamples <- resamples(modelos)
+metricas_resamples <- resultados_resamples$values %>%
+                         gather(key = "modelo", value = "valor", -Resample) %>%
+                         separate(col = "modelo", into = c("modelo", "metrica"),
+                                  sep = "~", remove = TRUE)
+metricas_resamples %>% 
+  group_by(modelo, metrica) %>% 
+  summarise(media = mean(valor)) %>%
+  spread(key = metrica, value = media) %>%
+  arrange(desc(Accuracy))
+
+metricas_resamples %>% 
+  group_by(modelo, metrica) %>% 
+  summarise(media = mean(valor)) %>%
+  ggplot(aes(x = reorder(modelo, media), y = media, label = round(media, 2))) +
+    geom_segment(aes(x = reorder(modelo, media), y = 0,
+                     xend = modelo, yend = media),
+                     color = "grey50") +
+    geom_point(size = 7, color = "firebrick") +
+    geom_text(color = "white", size = 2.5) +
+    scale_y_continuous(limits = c(0, 1)) +
+    labs(title = "Validación: Accuracy medio repeated-CV",
+         subtitle = "Modelos ordenados por media",
+         x = "modelo") +
+    coord_flip() +
+    theme_bw()
+```
+
+
+Como vemos el modelo de Ramdon forest y el logistico están practicamente empatados.
+
+Vamos a verlo de manera gráfica como se distribuyen los valores para cada modelo de las 50 simulaciones realizadas.
+
+```{r echo=FALSE}
+metricas_resamples %>% filter(metrica == "Accuracy") %>%
+  group_by(modelo) %>% 
+  mutate(media = mean(valor)) %>%
+  ungroup() %>%
+  ggplot(aes(x = reorder(modelo, media), y = valor, color = modelo)) +
+    geom_boxplot(alpha = 0.6, outlier.shape = NA) +
+    geom_jitter(width = 0.1, alpha = 0.6) +
+    scale_y_continuous(limits = c(0, 1)) +
+    
+    # Accuracy basal
+    geom_hline(yintercept = 0.62, linetype = "dashed") +
+    annotate(geom = "text", y = 0.6, x = 4.4, label = "Accuracy basal") +
+    theme_bw() +
+    labs(title = "Validación: Accuracy medio repeated-CV",
+         subtitle = "Modelos ordenados por media") +
+    coord_flip() +
+    theme(legend.position = "none")
+```
+
+En principio podemos decir que nos parece con mayor calidad el GLM ya que tiene el diagrama de caja mas estrecho aun teniendo algun outlier.
+
+Para asegurarnos que podriamos diferenciarlos vamos a hacer el test de WILCOXON. Este test es un estadistico que nos ayudará a ver si son significativamente los modelos.
+
+
+### Test de RANGOS DE WILCOXON.
+
+La prueba de los rangos con signo de Wilcoxon es una prueba no paramétrica para comparar el rango medio de dos muestras relacionadas y determinar si existen diferencias entre ellas.
+
+
+```{r echo=FALSE, warning = FALSE}
+# Comparaciones múltiples con un test suma de rangos de Wilcoxon
+# ==============================================================================
+
+metricas_accuracy <- metricas_resamples %>% filter(metrica == "Accuracy")
+comparaciones  <- pairwise.wilcox.test(x = metricas_accuracy$valor, 
+                                        g = metricas_accuracy$modelo,
+                                        paired = TRUE,
+                                        p.adjust.method = "holm")
+
+# Se almacenan los p_values en forma de dataframe
+comparaciones <- comparaciones$p.value %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "modeloA") %>%
+  gather(key = "modeloB", value = "p_value", -modeloA) %>%
+  na.omit() %>%
+  arrange(modeloA)
+
+comparaciones
+
+```
+
+Acorde a las comparaciones por pares, no existen evidencias suficientes para considerar que la capacidad predictiva de los modelos Random Forest, SVM radial y logistica es distinta. 
+
+Por ultimo vamos a comparar todos los modelos
+
+```{r echo=FALSE, warning= FALSE}
+set.seed(342)
+
+pred_prob_glm_final <- predict(modelo_logistic, newdata = df_test)
+pred_prob_svm_final <- predict(modelo_svmrad, newdata = df_test)
+pred_prob_rf_final <- predict(modelo_rf, newdata = df_test)
+pred_prob_knn_final <- predict(modelo_knn, newdata = df_test)
+pred_prob_Tree_final <- predict(modelo_C50Tree, newdata = df_test)
+pred_prob_nb_final <- predict(modelo_nb, newdata = df_test)
+
+paste("El Accuracy de test del modelo GLM:", round(confusionMatrix(pred_prob_glm_final, df_test$CLAIM_FLAG)$overall[1]*100, 3), "%")
+paste("El Accuracy de test del modelo SVM:", round(confusionMatrix(pred_prob_svm_final, df_test$CLAIM_FLAG)$overall[1]*100, 3), "%")
+paste("El Accuracy de test del modelo rf:", round(confusionMatrix(pred_prob_rf_final, df_test$CLAIM_FLAG)$overall[1]*100, 3), "%")
+paste("El Accuracy de test del modelo knn:", round(confusionMatrix(pred_prob_knn_final, df_test$CLAIM_FLAG)$overall[1]*100, 3), "%")
+paste("El Accuracy de test del modelo tree:", round(confusionMatrix(pred_prob_Tree_final, df_test$CLAIM_FLAG)$overall[1]*100, 3), "%")
+paste("El Accuracy de test del modelo NB:", round(confusionMatrix(pred_prob_nb_final, df_test$CLAIM_FLAG)$overall[1]*100, 3), "%")
+
+paste("El Kappa de test del modelo GLM:", round(confusionMatrix(pred_prob_glm_final, df_test$CLAIM_FLAG)$overall[2]*100, 3), "%")
+paste("El Kappa de test del modelo SVM:", round(confusionMatrix(pred_prob_svm_final, df_test$CLAIM_FLAG)$overall[2]*100, 3), "%")
+paste("El Kappa de test del modelo rf:", round(confusionMatrix(pred_prob_rf_final, df_test$CLAIM_FLAG)$overall[2]*100, 3), "%")
+paste("El Kappa de test del modelo knn:", round(confusionMatrix(pred_prob_knn_final, df_test$CLAIM_FLAG)$overall[2]*100, 3), "%")
+paste("El Kappa de test del modelo tree:", round(confusionMatrix(pred_prob_Tree_final, df_test$CLAIM_FLAG)$overall[2]*100, 3), "%")
+paste("El Kappa de test del modelo NB:", round(confusionMatrix(pred_prob_nb_final, df_test$CLAIM_FLAG)$overall[2]*100, 3), "%")
+
+```
+
+
+## Curva ROC
+
+### ROC modelo Random Forest
+
+```{r echo=FALSE}
+pred1 <- prediction(as.numeric(pred_prob_rf_final), as.numeric(df_test$CLAIM_FLAG))
+
+pred2 <- prediction(as.numeric(pred_prob_svm_final), as.numeric(df_test$CLAIM_FLAG))
+
+pred3 <- prediction(as.numeric(pred_prob_glm_final), as.numeric(df_test$CLAIM_FLAG))
+
+pred4 <- prediction(as.numeric(pred_prob_knn_final), as.numeric(df_test$CLAIM_FLAG))
+
+pred5 <- prediction(as.numeric(pred_prob_Tree_final), as.numeric(df_test$CLAIM_FLAG))
+
+pred6 <- prediction(as.numeric(pred_prob_nb_final), as.numeric(df_test$CLAIM_FLAG))
+
+perf1 <- performance(pred1, "tnr", "tpr")
+perf2 <- performance(pred2, "tnr", "tpr")
+perf3 <- performance(pred3, "tnr", "tpr")
+perf4 <- performance(pred4, "tnr", "tpr")
+perf5 <- performance(pred5, "tnr", "tpr")
+perf6 <- performance(pred6, "tnr", "tpr")
+
+plot(perf1, col="blue", xlim=c(1,0))
+plot(perf2,col="purple", add=TRUE)
+plot(perf3,col="orange", add=TRUE)
+plot(perf4,col="red", add=TRUE)
+plot(perf5,col="green", add=TRUE)
+plot(perf6,col="grey", add=TRUE)
+
+legend(x="right", legend=c("RF", "SVM", "GLM", "KNN", "TREE"), fill =c("blue", "purple", "orange", "red", "green"), cex=0.8)
+```
+
+# Validacion
+
+```{r echo=FALSE}
+set.seed(342)
+
+val_prob_glm_final <- predict(modelo_logistic, newdata = df_validation)
+
+paste("El Accuracy de test del modelo GLM:", round(confusionMatrix(val_prob_glm_final, df_validation$CLAIM_FLAG)$overall[1]*100, 3), "%")
+
+paste("El Kappa de test del modelo GLM:", round(confusionMatrix(val_prob_glm_final, df_validation$CLAIM_FLAG)$overall[2]*100, 3), "%")
+
+```
+
+
+# Conclusiones y Trabajo Futuro.
+
+Tras la comparativa realizada con los 5 modelos vemos que tenemos una gran rivalidad entre el modelo GLM y el modelo Random forest.
+
+La metrica de accuracy y de Kappa para los resultados de train y para los de test nos dan levemente mejor para el modelo de Random forest con respecto al GLM, además en la gráfica de comparativa de modelos podemos ver que la varianza del modelo es levemente mejor en el GLM aunque tras el analisis de rangos de Wilcoxon vemos que estas diferencias entre los modelos no son significativas por lo que asumimos que en estas métricas están igual.
+
+El punto diferenciador es la curva ROC, este indicador se decanta por el modelo Random Forest ya que en la grafica podemos ver que en ese modelo existe un punto donde encontramos el equilibrio entre true positive y true negative que queremos para nuestro modelo que rondaria el 95%(true positive) versus el 40% (true negative).
+
